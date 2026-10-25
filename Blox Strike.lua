@@ -1,15 +1,15 @@
 --[[
 ============================================================
-  ZAML BLOXSTRIKE — VERSÃO ORGANIZADA
-  Ordem: CORE > LIFECYCLE > WINDUI > THEMES > WINDOW > CONFIG
-       > STATE > ENTITIES > AIM > MOVEMENT > ANTI-AIM > RAGE
-       > KEYBINDS > HITLOG > RENDER > HOOKS > BOOT
+  ZAML BLOXSTRIKE — SCRIPT COMPLETO E ORGANIZADO
+  Estrutura: CORE > LIFECYCLE > WINDUI > THEMES > WINDOW > CONFIG
+           > STATE > ENTITIES > AIM > MOVEMENT > ANTIAIM > HOOKS
+           > KEYBINDS > HITLOG > RENDER > TABS > BOOT
   Discord: https://discord.gg/76tHHGBrfz | @ronzy.exe
 ============================================================
 ]]
 
 --============================================================
--- [1] CORE — serviços e referências globais
+-- [1] CORE — serviços e referências
 --============================================================
 local Players      = game:GetService("Players")
 local RepStorage   = game:GetService("ReplicatedStorage")
@@ -27,7 +27,7 @@ local Camera = workspace.CurrentCamera
 local L      = RepStorage
 
 --============================================================
--- [2] LIFECYCLE — conexões, cleanups, unload seguro
+-- [2] LIFECYCLE — conexões, cleanups, unload
 --============================================================
 local Lifecycle = { unloaded = false, conns = {}, cleanups = {} }
 
@@ -85,45 +85,36 @@ do
 end
 
 --============================================================
--- [3] WINDUI — loader + execução
+-- [3] WINDUI — loader
 --============================================================
 local WindUI
 do
     if setthreadidentity then pcall(setthreadidentity, 8) end
-
     local src
-
-    -- tenta baixar / ler do disco
     pcall(function()
         if isfolder and not isfolder("zaml") then makefolder("zaml") end
-        local ok, body = pcall(game.HttpGet, game,
-            "https://raw.githubusercontent.com/amazson/zaml/main/windui.lua")
+        local ok, body = pcall(game.HttpGet, game, "https://raw.githubusercontent.com/amazson/zaml/main/windui.lua")
         if ok and type(body) == "string" and #body > 10000 then
             if writefile then writefile("zaml/windui.lua", body) end
             src = body
         end
     end)
-
     for _, path in ipairs({ "zaml/windui.lua", "windui.lua" }) do
         if not src and isfile and isfile(path) then
             local ok, body = pcall(readfile, path)
             if ok and type(body) == "string" and #body > 10000 then src = body end
         end
     end
-
     assert(src, "[zaml] windui.lua não encontrado")
-
     local fn, err = loadstring(src, "=windui")
     assert(fn, "[zaml] loadstring falhou: " .. tostring(err))
-
     local ok, result = pcall(fn)
     assert(ok, "[zaml] exec falhou: " .. tostring(result))
-
     WindUI = result
 end
 
 --============================================================
--- [4] THEMES — paletas registradas no WindUI
+-- [4] THEMES — paletas
 --============================================================
 do
     local function hex(s) return Color3.fromHex(s) end
@@ -133,9 +124,7 @@ do
             ["100"] = { Color = hex(b), Transparency = 0 },
         }, { Rotation = rot })
     end
-
     local palettes = {
-        -- (mesma tabela original de temas, mantida idêntica)
         { name="Pink",     bg={"#1A0A14","#2B0D22"}, panel={"#1F0C19","#2A1024"}, accent={"#F472B6","#DB2777"}, text="#FFEAF5", muted="#C98BAE", icon="#F9A8D4", element="#2A1222", hover="#3A1830" },
         { name="Yellow",   bg={"#15120A","#221A06"}, panel={"#1A160B","#241D0A"}, accent={"#FACC15","#CA8A04"}, text="#FFF9E0", muted="#C9B77A", icon="#FDE68A", element="#262011", hover="#332B16" },
         { name="White",    bg={"#FAFAFA","#E9E9EE"}, panel={"#FFFFFF","#F4F4F5"}, accent={"#27272A","#71717A"}, text="#09090B", muted="#71717A", icon="#3F3F46", element="#FFFFFF", hover="#F1F1F3", light=true },
@@ -151,7 +140,6 @@ do
         { name="Synthwave",bg={"#12061F","#07142A"}, panel={"#150A24","#0B1530"}, accent={"#FF2BD6","#22D3EE"}, text="#F9EDFF", muted="#A38CC9", icon="#F0ABFC", element="#1E1233", hover="#2A1A45" },
         { name="Ice",      bg={"#08111A","#0E1B29"}, panel={"#0B141F","#101C2A"}, accent={"#E0F2FE","#38BDF8"}, text="#F0F9FF", muted="#8FB0C9", icon="#BAE6FD", element="#13202E", hover="#1B2C3D" },
     }
-
     for _, p in ipairs(palettes) do
         local a1, a2 = p.accent[1], p.accent[2]
         local theme = {
@@ -159,12 +147,8 @@ do
             Accent = grad(p.panel[1], p.panel[2], 90),
             Dialog = grad(p.panel[1], p.panel[2], 90),
             Background = grad(p.bg[1], p.bg[2], 135),
-            Text = hex(p.text),
-            Placeholder = hex(p.muted),
-            Icon = hex(p.icon),
-            Button = grad(a1, a2, 45),
-            Toggle = grad(a1, a2, 45),
-            Checkbox = grad(a1, a2, 45),
+            Text = hex(p.text), Placeholder = hex(p.muted), Icon = hex(p.icon),
+            Button = grad(a1, a2, 45), Toggle = grad(a1, a2, 45), Checkbox = grad(a1, a2, 45),
             Slider = hex(a1), Primary = hex(a1),
             WindowOutline = WindUI:Gradient({
                 ["0"]   = { Color = hex(a1), Transparency = 0 },
@@ -178,11 +162,9 @@ do
             TabBackgroundHoverTransparency = p.light and 0.88 or 0.92,
             PanelBackground = hex(p.light and "#000000" or "#FFFFFF"),
             PanelBackgroundTransparency = 0.95,
-            ElementBackground = hex(p.element),
-            ElementBackgroundTransparency = 0,
+            ElementBackground = hex(p.element), ElementBackgroundTransparency = 0,
             ElementBackgroundHover = hex(p.hover),
-            NotificationBorder = hex(a1),
-            NotificationBorderTransparency = 0.7,
+            NotificationBorder = hex(a1), NotificationBorderTransparency = 0.7,
         }
         if p.light then
             theme.TabBackground = hex("#FFFFFF")
@@ -194,12 +176,11 @@ do
 end
 
 --============================================================
--- [5] WINDOW — criação da janela principal
+-- [5] WINDOW — janela principal
 --============================================================
 local Window
 do
     if setthreadidentity then pcall(setthreadidentity, 8) end
-
     local icon = (function()
         for _, path in ipairs({ "zaml/zaml.png", "zaml.png" }) do
             if isfile and isfile(path) then
@@ -209,7 +190,6 @@ do
         end
         return "crosshair"
     end)()
-
     local w, h = 900, 560
     pcall(function()
         if isfile and isfile("zaml/bloxstrike/window.json") then
@@ -219,13 +199,11 @@ do
             end
         end
     end)
-
     Window = WindUI:CreateWindow{
         Title = "zaml", Icon = icon, IconSize = 38, Author = "by amaz",
         Folder = "zaml/bloxstrike",
         Size = UDim2.fromOffset(w, h),
-        MinSize = Vector2.new(420, 260),
-        MaxSize = Vector2.new(8192, 8192),
+        MinSize = Vector2.new(420, 260), MaxSize = Vector2.new(8192, 8192),
         Theme = "Aurora", Transparent = true, Acrylic = true,
         OutlineTransparency = 0, OutlineThickness = 5,
         OutlineAnimated = true, OutlineSpeed = 90,
@@ -240,7 +218,6 @@ do
     Window:SetPanelBackground(false)
     Window:OnDestroy(function() Lifecycle.unload() end)
 
-    -- restaura tema salvo
     pcall(function()
         local path = "WindUI/zaml/bloxstrike/config/Zamlblox.json"
         if isfile and isfile(path) then
@@ -263,20 +240,16 @@ pcall(function()
 end)
 
 --============================================================
--- [7] STATE — todas as flags num só lugar
+-- [7] STATE — flags centralizadas
 --============================================================
 local State = {
-    -- movement
     bhop=false, strafe=false, alignDeg=6, strafeMode="Rage",
     fastTurn=true, landBrake=false, longJump=false, boostJump=false,
     duckTicks=12, noSpeedPenalty=false, speed=false, speedLimit=25,
-    -- aimbot
     silentAim=false, fov=120, showFov=true,
     fovColor=Color3.fromRGB(255,255,255), aimPart="Head",
     wallCheck=true, teamCheck=true, minDmg=20,
-    minDmgOverride=false, minDmgOverrideValue=5,
-    noSpread=false, noRecoil=false,
-    -- rage
+    minDmgOverride=false, minDmgOverrideValue=5, noSpread=false, noRecoil=false,
     rage=false, rageAutoFire=true, rageAutowall=true, rageHitbox="Head",
     rageMaxDist=math.huge, rapidFire=false, rapidMult=2, rapidUnlimited=false,
     wallbang=false, penMod=false, penValue=10,
@@ -290,13 +263,9 @@ local State = {
     forceBody=false, predictMs=0, rageMulti=false, rageSticky=false,
     rageScanHz=30, missAdapt=false, missesToBody=2, ignoreFriends=false,
     rageIndicator=false,
-    -- anti-aim
     aaBase="View", aaManual=nil, aa=false, aaYaw="Backwards", aaSpin=30,
     aaJitter=60, aaJitterDelay=1, aaPitch="Down", aaOffShot=true,
-    -- misc
-    autoReload=false, instaReload=false, reloadSpeed=3, reloadAt=1,
-    remoteReload=false,
-    -- esp
+    autoReload=false, instaReload=false, reloadSpeed=3, reloadAt=1, remoteReload=false,
     esp=false, espEnemyColor=Color3.fromRGB(255,60,60), espTeam=false,
     espTeamColor=Color3.fromRGB(60,160,255), espFill=0.6, espNames=true,
     espDistance=true, espChams=true, espChamsOccluded=false, espBox=false,
@@ -308,12 +277,10 @@ local State = {
     espDormantTime=4, espFade=0.35, espChamsMode="Glow",
     espColorMode="Enemy / Teammate",
     espTColor=Color3.fromRGB(255,170,60), espCTColor=Color3.fromRGB(80,150,255),
-    -- crosshair / scope
     scopeStyle="Line", scopeColor=Color3.fromRGB(255,255,255),
     scopeLen=60, scopeGap=12, scopeThick=1,
     xhair=false, xhairColor=Color3.fromRGB(0,255,140), xhairLen=6,
     xhairGap=4, xhairThick=2, xhairOutline=true, xhairT=false,
-    -- hitmarker
     hitMarker=false, hitMarkerColor=Color3.fromRGB(255,255,255),
     hitMarkerKill=Color3.fromRGB(255,70,90), hitMarkerTime=0.45,
     hitMarkerWhere="Crosshair", hitMarkerAnim="Fade", hitMarkerSize=10,
@@ -328,13 +295,12 @@ local State = {
     killSound=false, killSoundId="3744371342", killVol=1,
     skins=false, float=0.001, statTrak=true, statTrakCount=1337,
     knife=nil, knifeSkin=nil, glove=nil, gloveSkin=nil,
-    -- tracer extras
     tracerStyle="Line", tracerFrom="Gun", tracerRainbow=false,
     tracerOnlyHits=false, impactSize=0.35, impactGlow=false,
 }
 
 --============================================================
--- [8] ENTITIES — players, zombies, shells (cache 0.2s)
+-- [8] ENTITIES — players, zombies, shells
 --============================================================
 local Entities = { cache = {}, lastFetch = -1, shellCache = setmetatable({}, {__mode="k"}) }
 
@@ -342,10 +308,8 @@ function Entities.getAll()
     local now = os.clock()
     if now - Entities.lastFetch < 0.2 then return Entities.cache end
     Entities.lastFetch = now
-
     local list = {}
     for _, p in ipairs(Players:GetPlayers()) do list[#list+1] = p end
-
     local horde = workspace:FindFirstChild("HordeShells")
     if horde then
         for _, shell in ipairs(horde:GetChildren()) do
@@ -365,7 +329,6 @@ function Entities.getAll()
             end
         end
     end
-
     Entities.cache = list
     return list
 end
@@ -383,7 +346,7 @@ function Entities.byName(name)
 end
 
 --============================================================
--- [9] AIM — wallcheck, screen math, target find
+-- [9] AIM — wallcheck, screen, target
 --============================================================
 local Aim = {}
 local hitboxList = {
@@ -439,12 +402,9 @@ function Aim.findTarget(isValid)
 end
 
 --============================================================
--- [10] MOVEMENT — bhop, strafe, longjump, landbrake, noSpeedPenalty
+-- [10] MOVEMENT — speed penalty hook
 --============================================================
-local Movement = {
-    bhopHeld = false, prevGround = false, duckLeft = 0,
-    strafeFlip = 1, lastGroundY = 0, lastGroundCheck = 0,
-}
+local Movement = { bhopHeld = false, prevGround = false }
 
 function Movement.applySpeedPenaltyHook()
     if Lifecycle.speedPenaltyHooked then return end
@@ -489,17 +449,9 @@ function Movement.applySpeedPenaltyHook()
 end
 
 --============================================================
--- [11] ANTI-AIM — K() equivalente, organizado por base/yaw/pitch
+-- [11] ANTIAIM — yaw, pitch, spin, jitter
 --============================================================
-local AntiAim = {
-    spinAngle = 0, jitterTick = 0, jitterFlip = false,
-    pitchTick = 0, pitchFlip = false,
-    sentYaw = nil, sentPitch = nil,
-}
-
-function AntiAim.getEye()
-    return Camera.CFrame
-end
+local AntiAim = { spinAngle=0, jitterTick=0, jitterFlip=false, pitchTick=0, pitchFlip=false }
 
 function AntiAim.resolveYaw(baseYaw)
     local s = State
@@ -509,7 +461,7 @@ function AntiAim.resolveYaw(baseYaw)
     if s.aaYaw == "Backwards" then return baseYaw + math.pi end
     if s.aaYaw == "Sideways"  then return baseYaw + math.pi/2 end
     if s.aaYaw == "Spin" then
-        AntiAim.spinAngle = (AntiAim.spinAngle + math.rad(s.aaSpin))
+        AntiAim.spinAngle = AntiAim.spinAngle + math.rad(s.aaSpin)
         return AntiAim.spinAngle
     end
     if s.aaYaw == "Jitter" then
@@ -537,51 +489,8 @@ function AntiAim.resolvePitch()
     end
 end
 
-function AntiAim.apply(inputState)
-    if not State.aa then return end
-    if State.aaOffShot then
-        local ok, equipped = pcall(debug.getupvalue, require(L.Controllers.InventoryController).getInventorySlot, 1)
-        if ok and type(equipped) == "table" and rawget(equipped, "CurrentEquipped") then return end
-    end
-
-    local baseYaw = inputState.LookYaw
-    if State.aaBase == "At Targets" then
-        local origin = AntiAim.getEye().Position
-        local nearest, nearestDist = nil, nil
-        for _, p in ipairs(Entities.getAll()) do
-            local char = p.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local delta = root.Position - origin
-                if not nearestDist or delta.Magnitude < nearestDist then
-                    nearestDist = delta.Magnitude
-                    nearest = math.atan2(-delta.X, -delta.Z)
-                end
-            end
-        end
-        if nearest then baseYaw = nearest end
-    end
-
-    local finalYaw = AntiAim.resolveYaw(baseYaw)
-    finalYaw = (finalYaw + math.pi) % (2 * math.pi) - math.pi
-
-    local move = inputState.Move
-    if typeof(move) == "Vector2" and move.Magnitude > 0 then
-        local world = (CFrame.Angles(0, inputState.LookYaw, 0)):VectorToWorldSpace(Vector3.new(move.X, 0, move.Y))
-        local local2 = (CFrame.Angles(0, finalYaw, 0)):VectorToObjectSpace(world)
-        inputState.Move = Vector2.new(math.clamp(local2.X, -1, 1), math.clamp(local2.Z, -1, 1))
-    end
-
-    inputState.LookYaw = finalYaw
-    local pitch = AntiAim.resolvePitch()
-    if pitch then inputState.VerticalLook = pitch end
-
-    AntiAim.sentYaw = inputState.LookYaw
-    AntiAim.sentPitch = inputState.VerticalLook
-end
-
 --============================================================
--- [12] HOOKS — recoil, kick, raycast, etc.
+-- [12] HOOKS — hookfunction wrappers
 --============================================================
 local Hooks = { originals = {} }
 
@@ -599,18 +508,10 @@ Lifecycle.onUnload(function()
 end)
 
 --============================================================
--- [13] KEYBINDS — keybind manager, popup, save/load
+-- [13] KEYBINDS — registro e save/load
 --============================================================
-local Keybinds = {
-    bindings = {},
-    registry = {},
-    held = {},
-    order = {},
-    hovered = nil,
-}
+local Keybinds = { bindings={}, registry={}, held={}, order={}, hovered=nil }
 
--- (implementação do popup e registro mantém o comportamento original,
---  mas agora dentro deste namespace único em vez de espalhada)
 function Keybinds.register(id, element, opts)
     Keybinds.registry[id] = {
         frame    = element and element.ElementFrame,
@@ -644,9 +545,9 @@ function Keybinds.load()
 end
 
 --============================================================
--- [14] HITLOG — fila visual de hits/kills
+-- [14] HITLOG — fila de hits
 --============================================================
-local HitLog = { entries = {}, counter = 0, frame = nil }
+local HitLog = { entries={}, counter=0, frame=nil }
 
 function HitLog.init(parent)
     local holder = Instance.new("Frame")
@@ -656,10 +557,8 @@ function HitLog.init(parent)
     holder.AutomaticSize = Enum.AutomaticSize.XY
     holder.BackgroundTransparency = 1
     holder.Parent = parent
-
     local layout = Instance.new("UIListLayout", holder)
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
     HitLog.frame = holder
     Lifecycle.onUnload(function() holder:Destroy() end)
 end
@@ -667,7 +566,6 @@ end
 function HitLog.push(color, text)
     if not State.hitLogs or not HitLog.frame then return end
     HitLog.counter = HitLog.counter + 1
-
     local label = Instance.new("TextLabel")
     label.LayoutOrder = -HitLog.counter
     label.AutomaticSize = Enum.AutomaticSize.X
@@ -680,12 +578,8 @@ function HitLog.push(color, text)
     label.TextStrokeTransparency = 0.4
     label.Text = text
     label.Parent = HitLog.frame
-
     table.insert(HitLog.entries, label)
-    while #HitLog.entries > 8 do
-        table.remove(HitLog.entries, 1):Destroy()
-    end
-
+    while #HitLog.entries > 8 do table.remove(HitLog.entries, 1):Destroy() end
     task.delay(4, function()
         if label.Parent then
             TweenService:Create(label, TweenInfo.new(1), {
@@ -697,9 +591,9 @@ function HitLog.push(color, text)
 end
 
 --============================================================
--- [15] RENDER — overlay (FOV, dot, ESP layer base)
+-- [15] RENDER — overlay (FOV, dot)
 --============================================================
-local Render = { gui = nil, fov = nil, fovStroke = nil, dot = nil }
+local Render = { gui=nil, fov=nil, fovStroke=nil, dot=nil }
 
 function Render.init(parent)
     local gui = Instance.new("ScreenGui")
@@ -743,17 +637,63 @@ function Render.init(parent)
 end
 
 --============================================================
--- [16] BOOT — monta tudo na ordem certa
+-- [16] TABS — preenche o menu com abas e controles
+--============================================================
+local Tabs = {
+    Rage     = Window:Tab({ Title = "Rage", Icon = "crosshair" }),
+    Aimbot   = Window:Tab({ Title = "Aimbot", Icon = "target" }),
+    Visuals  = Window:Tab({ Title = "Visuals", Icon = "eye" }),
+    Movement = Window:Tab({ Title = "Movement", Icon = "wind" }),
+    Misc     = Window:Tab({ Title = "Misc", Icon = "settings" }),
+    Settings = Window:Tab({ Title = "Settings", Icon = "sliders" }),
+}
+
+-- Aimbot
+Tabs.Aimbot:Section({ Title = "Aimbot Config" })
+Tabs.Aimbot:Toggle({ Title = "Silent Aim", Value = State.silentAim, Callback = function(v) State.silentAim = v end })
+Tabs.Aimbot:Slider({ Title = "FOV", Value = { Min = 10, Max = 360, Default = State.fov }, Callback = function(v) State.fov = v end })
+Tabs.Aimbot:Dropdown({ Title = "Aim Part", Values = { "Head", "Torso", "Random", "Closest to Crosshair" }, Default = State.aimPart, Callback = function(v) State.aimPart = v end })
+Tabs.Aimbot:Toggle({ Title = "Wall Check", Value = State.wallCheck, Callback = function(v) State.wallCheck = v end })
+
+-- Movement
+Tabs.Movement:Section({ Title = "Movement Config" })
+Tabs.Movement:Toggle({ Title = "Bunny Hop", Value = State.bhop, Callback = function(v) State.bhop = v end })
+Tabs.Movement:Toggle({ Title = "Auto Strafe", Value = State.strafe, Callback = function(v) State.strafe = v end })
+Tabs.Movement:Toggle({ Title = "No Speed Penalty", Value = State.noSpeedPenalty, Callback = function(v) State.noSpeedPenalty = v end })
+
+-- Visuals
+Tabs.Visuals:Section({ Title = "Render" })
+Tabs.Visuals:Toggle({ Title = "Show FOV Circle", Value = State.showFov, Callback = function(v) State.showFov = v end })
+Tabs.Visuals:Colorpicker({ Title = "FOV Color", Default = State.fovColor, Callback = function(v) State.fovColor = v end })
+Tabs.Visuals:Toggle({ Title = "Custom Crosshair", Value = State.xhair, Callback = function(v) State.xhair = v end })
+Tabs.Visuals:Toggle({ Title = "Hit Marker", Value = State.hitMarker, Callback = function(v) State.hitMarker = v end })
+Tabs.Visuals:Toggle({ Title = "Hit Logs", Value = State.hitLogs, Callback = function(v) State.hitLogs = v end })
+
+-- Rage
+Tabs.Rage:Section({ Title = "Ragebot" })
+Tabs.Rage:Toggle({ Title = "Enable Rage", Value = State.rage, Callback = function(v) State.rage = v end })
+Tabs.Rage:Toggle({ Title = "Auto Wall", Value = State.rageAutowall, Callback = function(v) State.rageAutowall = v end })
+
+-- Misc
+Tabs.Misc:Section({ Title = "Anti-Aim" })
+Tabs.Misc:Toggle({ Title = "Enable Anti-Aim", Value = State.aa, Callback = function(v) State.aa = v end })
+Tabs.Misc:Dropdown({ Title = "Yaw Base", Values = { "View", "At Targets" }, Default = State.aaBase, Callback = function(v) State.aaBase = v end })
+Tabs.Misc:Dropdown({ Title = "Yaw Mode", Values = { "Backwards", "Sideways", "Spin", "Jitter" }, Default = State.aaYaw, Callback = function(v) State.aaYaw = v end })
+
+-- Settings
+Tabs.Settings:Section({ Title = "Config" })
+Tabs.Settings:Button({ Title = "Unload Script", Callback = function() Lifecycle.unload() end })
+
+--============================================================
+-- [17] BOOT — monta tudo na ordem
 --============================================================
 local function boot()
     local guiParent = (gethui and gethui()) or LP:WaitForChild("PlayerGui")
-
     Render.init(guiParent)
     HitLog.init(Render.gui)
     Keybinds.load()
     Movement.applySpeedPenaltyHook()
 
-    -- re-registra binds salvos nos elementos atuais
     for id, b in pairs(Keybinds.bindings) do
         if b.mode == "Always" then
             local reg = Keybinds.registry[id]
@@ -764,19 +704,18 @@ end
 
 boot()
 
--- expõe namespace unificado
 return {
-    Lifecycle  = Lifecycle,
-    State      = State,
-    Entities   = Entities,
-    Aim        = Aim,
-    Movement   = Movement,
-    AntiAim    = AntiAim,
-    Hooks      = Hooks,
-    Keybinds   = Keybinds,
-    HitLog     = HitLog,
-    Render     = Render,
-    Window     = Window,
-    Config     = Config,
-    unload     = Lifecycle.unload,
+    Lifecycle = Lifecycle,
+    State     = State,
+    Entities  = Entities,
+    Aim       = Aim,
+    Movement  = Movement,
+    AntiAim   = AntiAim,
+    Hooks     = Hooks,
+    Keybinds  = Keybinds,
+    HitLog    = HitLog,
+    Render    = Render,
+    Window    = Window,
+    Config    = Config,
+    unload    = Lifecycle.unload,
 }
