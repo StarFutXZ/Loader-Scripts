@@ -1,1 +1,1 @@
-loadstring(game:HttpGet('https://skullhub.xyz/loader.lua'))()
+loadstring(game:HttpGet('https://raw.githubusercontent.com/TheDarkoneMarcillisePex/Other-Scripts/refs/heads/main/Dead%20Rails%20GUI'))()
