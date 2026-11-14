@@ -1,7 +1,5 @@
 --[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | SOLMAR ISLAND FIXED GRINDER (UI UPDATED)
-      Features: Draggable, Close/Open Button, Level-Based Targets,
-                NPC Magnet, Solmar Quest Giver, Kill Aura.
+      VOX SEAS | SOLMAR ISLAND FIXER (QUEST DIALOG FIX)
       Made by @ronzy.exe on discord
 ═══════════════════════════════════════════════════════════════]]
 
@@ -29,7 +27,8 @@ local CFG = {
     Bg             = Color3.fromRGB(14, 18, 24)
 }
 
--- Alvos por level
+local isDoingQuest = false -- Trava o farm pra n dar TP de volta
+
 local function getTargetsForLevel()
     local lvl = 1
     local stats = LP:FindFirstChild("leaderstats")
@@ -115,6 +114,29 @@ local function findTargets(radius)
     return list
 end
 
+-- Função pesada pra clicar em botões de UI pelo texto
+local function clickUIByText(textToFind)
+    for _, gui in ipairs(PG:GetDescendants()) do
+        if gui:IsA("TextButton") or gui:IsA("ImageButton") then
+            local txt = ""
+            if gui:IsA("TextButton") then txt = gui.Text:lower() end
+            
+            -- As vezes o texto ta dentro do botão
+            local label = gui:FindFirstChildWhichIsA("TextLabel")
+            if label then txt = label.Text:lower() end
+
+            if txt:find(textToFind:lower()) then
+                gui.MouseButton1Click:Fire() -- Simula o clique
+                return true
+            end
+        end
+    end
+    return false
+end
+
+--=============================================================
+-- AUTO QUEST DIALOG
+--=============================================================
 local function doSolmarQuest()
     local _, hrp = getChar()
     if not hrp then return end
@@ -128,29 +150,42 @@ local function doSolmarQuest()
     end
 
     if giverModel then
+        isDoingQuest = true -- Trava o Farm
         local pos = giverModel:FindFirstChild("HumanoidRootPart") or giverModel.PrimaryPart
+        
         if pos then
+            -- 1. Teleporta pro NPC
             hrp.CFrame = pos.CFrame + Vector3.new(0, 3, 0)
-            task.wait(0.3)
+            task.wait(0.5) 
             
+            -- 2. Aciona o "Conversar" (ProximityPrompt ou ClickDetector)
             for _, prompt in ipairs(giverModel:GetDescendants()) do
                 if prompt:IsA("ProximityPrompt") then
                     fireproximityprompt(prompt)
-                    task.wait(0.5)
-                    break
+                elseif prompt:IsA("ClickDetector") then
+                    fireclickdetector(prompt)
                 end
+            end
+            
+            -- Clica no botão "Conversar" da tela se aparecer
+            clickUIByText("conversar")
+            task.wait(0.8)
+
+            -- 3. Clica em "Mostre-me as missões"
+            if clickUIByText("mostre-me") or clickUIByText("mostrar") then
+                task.wait(0.8)
             end
 
-            for _, gui in ipairs(PG:GetDescendants()) do
-                if gui:IsA("TextButton") then
-                    local txt = gui.Text:lower()
-                    if txt:find("accept") or txt:find("aceitar") then
-                        gui:Click()
-                        break
-                    end
-                end
+            -- 4. Clica em "Aceitar"
+            if clickUIByText("aceitar") or clickUIByText("accept") then
+                task.wait(0.5)
             end
+
+            -- 5. Fecha o quadro de missões se estiver aberto
+            clickUIByText("x") -- Botão de fechar
+            task.wait(0.5)
         end
+        isDoingQuest = false -- Libera o Farm
     end
 end
 
@@ -160,7 +195,7 @@ end
 task.spawn(function()
     while true do
         task.wait(0.2)
-        if CFG.Magnet then
+        if CFG.Magnet and not isDoingQuest then
             local _, hrp = getChar()
             if hrp then
                 local targets = findTargets(CFG.MagnetRadius)
@@ -178,7 +213,7 @@ end)
 task.spawn(function()
     while true do
         task.wait(CFG.AttackDelay)
-        if CFG.AutoFarm and not CFG.Magnet then
+        if CFG.AutoFarm and not CFG.Magnet and not isDoingQuest then
             local c, hrp, hum = getChar()
             if c and hum.Health > 0 then
                 local targets = findTargets(CFG.Radius)
@@ -196,7 +231,7 @@ end)
 task.spawn(function()
     while true do
         task.wait(0.15)
-        if CFG.KillAura then
+        if CFG.KillAura and not isDoingQuest then
             local targets = findTargets(CFG.Radius)
             if #targets > 0 then swing() end
         end
@@ -205,8 +240,10 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(3)
-        if CFG.AutoQuest then doSolmarQuest() end
+        task.wait(4) -- Checa a cada 4 segundos
+        if CFG.AutoQuest and not isDoingQuest then 
+            doSolmarQuest() 
+        end
     end
 end)
 
@@ -227,7 +264,6 @@ gui.IgnoreGuiInset = true
 gui.DisplayOrder = 100
 gui.Parent = PG
 
--- Botão Flutuante (Abre o Hub)
 local openBtn = Instance.new("TextButton")
 openBtn.Size = UDim2.fromOffset(100, 30)
 openBtn.Position = UDim2.new(0, 20, 0, 20)
@@ -236,11 +272,10 @@ openBtn.TextColor3 = CFG.Bg
 openBtn.Font = Enum.Font.Code
 openBtn.TextSize = 14
 openBtn.Text = "ABRIR HUB"
-openBtn.Visible = false -- Começa invisível, pois o main está aberto
+openBtn.Visible = false
 openBtn.Parent = gui
 Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
 
--- Janela Principal
 local main = Instance.new("Frame")
 main.Size = UDim2.fromOffset(260, 240)
 main.Position = UDim2.new(0, 20, 0, 60)
@@ -252,7 +287,6 @@ Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 local st = Instance.new("UIStroke", main)
 st.Color = CFG.Accent; st.Thickness = 1; st.Transparency = 0.5
 
--- Barra de Título (Área de Arrastar)
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -40, 0, 32)
 title.Position = UDim2.new(0, 10, 0, 6)
@@ -264,7 +298,6 @@ title.TextXAlignment = Enum.TextXAlignment.Left
 title.Text = "SOLMAR ISLAND FIXER"
 title.Parent = main
 
--- Botão de Fechar (X)
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2.fromOffset(24, 24)
 closeBtn.Position = UDim2.new(1, -30, 0, 8)
@@ -276,7 +309,6 @@ closeBtn.Text = "X"
 closeBtn.Parent = main
 Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 6)
 
--- Lista de Toggles
 local list = Instance.new("Frame")
 list.Size = UDim2.new(1, -20, 1, -50)
 list.Position = UDim2.new(0, 10, 0, 42)
@@ -316,7 +348,6 @@ makeToggle("Auto Farm (Teleport)", "AutoFarm", 3)
 makeToggle("Kill Aura (AoE)", "KillAura", 4)
 makeToggle("Anti AFK", "AntiAFK", 5)
 
--- Lógica do Fechar/abrir
 closeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
     openBtn.Visible = true
@@ -327,7 +358,6 @@ openBtn.MouseButton1Click:Connect(function()
     openBtn.Visible = false
 end)
 
--- Lógica de Arrastar
 local dragging, dragStart, startPos
 title.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -346,7 +376,6 @@ UserInputService.InputEnded:Connect(function(i)
     end
 end)
 
--- Atalho Teclado (RightControl)
 UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
     if i.KeyCode == Enum.KeyCode.RightControl then
