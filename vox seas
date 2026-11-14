@@ -1,228 +1,466 @@
---[[ Vox Seas | Seafarer's HUD (LocalScript) ]]
--- Place in: StarterPlayer > StarterPlayerScripts
--- Toggle with: RightShift
+--[[═══════════════════════════════════════════════════════════════
+      VOX SEAS | NORMAL AUTO-FARM SUITE  (RightCtrl = UI)
+      Features: Auto Farm, Auto Chest, Auto Quest, Auto Boss,
+                Auto Attack, Kill Aura, Auto Sell, Anti-AFK,
+                Remote Sniffer (fallback de dano)
+      Made by @ronzy.exe on discord
+═══════════════════════════════════════════════════════════════]]
 
-local Players       = game:GetService("Players")
-local RunService    = game:GetService("RunService")
+local Players          = game:GetService("Players")
+local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService  = game:GetService("TweenService")
+local VirtualUser      = game:GetService("VirtualUser")
+local Workspace        = game:GetService("Workspace")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local LP = Players.LocalPlayer
+local PG = LP:WaitForChild("PlayerGui")
 
---// CONFIG
-local CONFIG = {
-	Accent      = Color3.fromRGB(90, 200, 255),
-	Backdrop    = Color3.fromRGB(14, 18, 24),
-	Warn        = Color3.fromRGB(255, 190, 70),
-	Key         = Enum.KeyCode.RightShift,
-	UpdateRate  = 1 / 30,
+--=============================================================
+-- CONFIG
+--=============================================================
+local CFG = {
+    Radius         = 300,
+    AttackDelay    = 0.30,
+    AuraRadius     = 45,
+    ChestRadius    = 400,
+    QuestRadius    = 500,
+    SellRadius     = 50,
+    TpHeight       = 3,
+    AutoFarm       = false,
+    AutoAttack     = false,
+    AutoChest      = false,
+    AutoQuest      = false,
+    AutoBoss       = false,
+    AutoSell       = false,
+    KillAura       = false,
+    AntiAFK        = true,
+    UseRemoteDmg   = true,   -- tenta achar remote de dano
+    Accent         = Color3.fromRGB(90, 200, 255),
+    Warn           = Color3.fromRGB(255, 190, 70),
+    Bg             = Color3.fromRGB(14, 18, 24),
 }
 
---// BUILD UI
+--=============================================================
+-- HELPERS
+--=============================================================
+local function getChar()
+    local c = LP.Character
+    if not c then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    local hum = c:FindFirstChildOfClass("Humanoid")
+    if hrp and hum then return c, hrp, hum end
+    return nil
+end
+
+local function isPlayerModel(m)
+    return Players:GetPlayerFromCharacter(m) ~= nil
+end
+
+local function alive(hum)
+    return hum and hum.Health > 0
+end
+
+local function equipTool()
+    local _, _, hum = getChar()
+    if not hum then return nil end
+    local tool = LP.Character:FindFirstChildOfClass("Tool")
+    if not tool then
+        local bp = LP:FindFirstChild("Backpack")
+        if bp then
+            for _, t in ipairs(bp:GetChildren()) do
+                if t:IsA("Tool") then
+                    hum:EquipTool(t)
+                    task.wait(0.05)
+                    return t
+                end
+            end
+        end
+    end
+    return tool
+end
+
+--=============================================================
+-- REMOTE SNIFFER (fallback pra achar remote de dano)
+--=============================================================
+local damageRemotes = {}
+local function sniffRemotes(container)
+    for _, obj in ipairs(container:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            local n = obj.Name:lower()
+            if n:find("attack") or n:find("damage") or n:find("hit")
+            or n:find("combat") or n:find("m1") or n:find("swing") then
+                damageRemotes[obj] = true
+            end
+        end
+    end
+end
+pcall(sniffRemotes, ReplicatedStorage)
+pcall(sniffRemotes, Workspace)
+
+local function fireDamage(target)
+    if not CFG.UseRemoteDmg then return false end
+    local fired = false
+    for remote in pairs(damageRemotes) do
+        pcall(function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(target)
+            else
+                remote:InvokeServer(target)
+            end
+            fired = true
+        end)
+    end
+    return fired
+end
+
+--=============================================================
+-- COMBATE
+--=============================================================
+local function swing(target)
+    local tool = equipTool()
+    if tool then
+        pcall(function()
+            tool:Activate()
+            local r = tool:FindFirstChild("Remote") or tool:FindFirstChild("Event")
+            if r and r:IsA("RemoteEvent") then
+                if target then r:FireServer(target) else r:FireServer() end
+            end
+        end)
+    end
+    if target then fireDamage(target) end
+end
+
+local function findEnemies(radius)
+    local list = {}
+    local _, hrp = getChar()
+    if not hrp then return list end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and not isPlayerModel(obj) then
+            local hum  = obj:FindFirstChildOfClass("Humanoid")
+            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
+            if alive(hum) and root then
+                local d = (root.Position - hrp.Position).Magnitude
+                if d <= radius then
+                    table.insert(list, {model = obj, root = root, hum = hum, dist = d})
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    return list
+end
+
+local function findNamed(radius, ...)
+    local names = {...}
+    local list = {}
+    local _, hrp = getChar()
+    if not hrp then return list end
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local n = obj.Name:lower()
+            for _, key in ipairs(names) do
+                if n:find(key) then
+                    local pos = obj:IsA("BasePart") and obj
+                        or (obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart"))
+                    if pos then
+                        local d = (pos.Position - hrp.Position).Magnitude
+                        if d <= radius then
+                            table.insert(list, {obj = obj, pos = pos, dist = d})
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    return list
+end
+
+local function triggerPromptNear(pos, radius)
+    radius = radius or 15
+    local best, bestD
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.Enabled then
+            local parent = obj.Parent
+            local ppos = parent and (
+                parent:IsA("BasePart") and parent.Position
+                or parent:IsA("Model") and (parent.PrimaryPart and parent.PrimaryPart.Position)
+            )
+            if ppos then
+                local d = (ppos - pos).Magnitude
+                if d <= radius and (not bestD or d < bestD) then
+                    best, bestD = obj, d
+                end
+            end
+        end
+    end
+    if best then
+        pcall(function() fireproximityprompt(best) end)
+        return true
+    end
+    return false
+end
+
+local function tp(cf)
+    local _, hrp = getChar()
+    if hrp then hrp.CFrame = cf end
+end
+
+local function tpToTarget(root, offset)
+    local _, hrp = getChar()
+    if not hrp then return end
+    local dir = (hrp.Position - root.Position)
+    if dir.Magnitude < 0.1 then dir = Vector3.new(0, 0, 1) end
+    dir = dir.Unit
+    tp(root.CFrame + dir * (offset or 6) + Vector3.new(0, CFG.TpHeight, 0))
+end
+
+--=============================================================
+-- LOOPS
+--=============================================================
+task.spawn(function() -- Auto Attack
+    while true do
+        task.wait(CFG.AttackDelay)
+        if CFG.AutoAttack then
+            local e = findEnemies(CFG.Radius)
+            if e[1] then swing(e[1].model) end
+        end
+    end
+end)
+
+task.spawn(function() -- Kill Aura
+    while true do
+        task.wait(0.12)
+        if CFG.KillAura then
+            local e = findEnemies(CFG.AuraRadius)
+            if #e > 0 then
+                for _, t in ipairs(e) do swing(t.model) end
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Auto Farm
+    while true do
+        task.wait(0.15)
+        if CFG.AutoFarm then
+            local c, _, hum = getChar()
+            if c and alive(hum) then
+                local e = findEnemies(CFG.Radius)
+                if e[1] then
+                    tpToTarget(e[1].root)
+                    task.wait(0.05)
+                    swing(e[1].model)
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Auto Chest
+    while true do
+        task.wait(0.6)
+        if CFG.AutoChest then
+            local c = findNamed(CFG.ChestRadius, "chest", "crate", "barrel", "treasure", "loot")
+            if c[1] then
+                local _, hrp = getChar()
+                if hrp then
+                    tp(c[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
+                    task.wait(0.2)
+                    triggerPromptNear(c[1].pos.Position, 20)
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Auto Quest
+    while true do
+        task.wait(1)
+        if CFG.AutoQuest then
+            local q = findNamed(CFG.QuestRadius, "quest", "mission", "giver", "board", "npc")
+            if q[1] then
+                local _, hrp = getChar()
+                if hrp then
+                    tp(q[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
+                    task.wait(0.25)
+                    triggerPromptNear(q[1].pos.Position, 25)
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Auto Boss
+    while true do
+        task.wait(0.3)
+        if CFG.AutoBoss then
+            local _, hrp = getChar()
+            if hrp then
+                for _, obj in ipairs(Workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj.Name:lower():find("boss") then
+                        local hum  = obj:FindFirstChildOfClass("Humanoid")
+                        local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+                        if alive(hum) and root then
+                            tpToTarget(root)
+                            task.wait(0.05)
+                            swing(obj)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+task.spawn(function() -- Auto Sell
+    while true do
+        task.wait(2)
+        if CFG.AutoSell then
+            local s = findNamed(CFG.SellRadius, "sell", "merchant", "vendor")
+            if s[1] then
+                local _, hrp = getChar()
+                if hrp then
+                    tp(s[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
+                    task.wait(0.2)
+                    triggerPromptNear(s[1].pos.Position, 20)
+                end
+            end
+        end
+    end
+end)
+
+-- Anti AFK
+LP.Idled:Connect(function()
+    if CFG.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end)
+
+--=============================================================
+-- UI
+--=============================================================
 local gui = Instance.new("ScreenGui")
-gui.Name = "VoxSeas_HUD"
+gui.Name = "VoxSeas_Suite"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
-gui.DisplayOrder = 50
-gui.Parent = playerGui
+gui.DisplayOrder = 100
+gui.Parent = PG
 
-local panel = Instance.new("Frame")
-panel.Size = UDim2.fromOffset(230, 132)
-panel.Position = UDim2.new(0, 18, 0, 18)
-panel.BackgroundColor3 = CONFIG.Backdrop
-panel.BackgroundTransparency = 0.15
-panel.BorderSizePixel = 0
-panel.Parent = gui
+local main = Instance.new("Frame")
+main.Size = UDim2.fromOffset(270, 400)
+main.Position = UDim2.new(0, 20, 0, 20)
+main.BackgroundColor3 = CFG.Bg
+main.BorderSizePixel = 0
+main.Parent = gui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = panel
+local uc = Instance.new("UICorner", main); uc.CornerRadius = UDim.new(0, 8)
+local st = Instance.new("UIStroke", main)
+st.Color = CFG.Accent; st.Thickness = 1; st.Transparency = 0.5
 
-local stroke = Instance.new("UIStroke")
-stroke.Color = CONFIG.Accent
-stroke.Thickness = 1
-stroke.Transparency = 0.55
-stroke.Parent = panel
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 0, 32)
+title.Position = UDim2.new(0, 10, 0, 6)
+title.BackgroundTransparency = 1
+title.Font = Enum.Font.Code
+title.TextSize = 15
+title.TextColor3 = CFG.Accent
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Text = "VOX SEAS | SUITE"
+title.Parent = main
 
-local padding = Instance.new("UIPadding")
-padding.PaddingTop    = UDim.new(0, 10)
-padding.PaddingLeft   = UDim.new(0, 12)
-padding.PaddingRight  = UDim.new(0, 12)
-padding.PaddingBottom = UDim.new(0, 10)
-padding.Parent = panel
+local list = Instance.new("Frame")
+list.Size = UDim2.new(1, -20, 1, -50)
+list.Position = UDim2.new(0, 10, 0, 42)
+list.BackgroundTransparency = 1
+list.Parent = main
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 4)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = panel
+local ll = Instance.new("UIListLayout", list)
+ll.Padding = UDim.new(0, 5)
+ll.SortOrder = Enum.SortOrder.LayoutOrder
 
-local function makeRow(order, labelText)
-	local row = Instance.new("Frame")
-	row.Size = UDim2.new(1, 0, 0, 18)
-	row.BackgroundTransparency = 1
-	row.LayoutOrder = order
-	row.Parent = panel
+local function makeToggle(name, key, order)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 26)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 36, 44)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = true
+    btn.Font = Enum.Font.Code
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.fromRGB(220, 226, 232)
+    btn.Text = "[ OFF ]  " .. name
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.LayoutOrder = order
+    btn.Parent = list
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    local pd = Instance.new("UIPadding", btn)
+    pd.PaddingLeft = UDim.new(0, 10)
 
-	local key = Instance.new("TextLabel")
-	key.Size = UDim2.new(0.45, 0, 1, 0)
-	key.BackgroundTransparency = 1
-	key.Font = Enum.Font.Code
-	key.TextSize = 12
-	key.TextXAlignment = Enum.TextXAlignment.Left
-	key.TextColor3 = Color3.fromRGB(140, 152, 166)
-	key.Text = labelText
-	key.Parent = row
-
-	local val = Instance.new("TextLabel")
-	val.Size = UDim2.new(0.55, 0, 1, 0)
-	val.Position = UDim2.new(0.45, 0, 0, 0)
-	val.BackgroundTransparency = 1
-	val.Font = Enum.Font.Code
-	val.TextSize = 12
-	val.TextXAlignment = Enum.TextXAlignment.Right
-	val.TextColor3 = CONFIG.Accent
-	val.Text = "--"
-	val.Parent = row
-
-	return val
+    btn.MouseButton1Click:Connect(function()
+        CFG[key] = not CFG[key]
+        btn.Text = string.format("[ %s ]  %s", CFG[key] and "ON " or "OFF", name)
+        btn.TextColor3 = CFG[key] and CFG.Accent or Color3.fromRGB(220, 226, 232)
+    end)
 end
 
-local rows = {
-	FPS      = makeRow(1, "FPS"),
-	Ping     = makeRow(2, "PING"),
-	Heading  = makeRow(3, "HEADING"),
-	Pos      = makeRow(4, "POS"),
-	Speed    = makeRow(5, "SPEED"),
-}
+makeToggle("Auto Farm",   "AutoFarm",   1)
+makeToggle("Auto Attack", "AutoAttack", 2)
+makeToggle("Kill Aura",   "KillAura",   3)
+makeToggle("Auto Chest",  "AutoChest",  4)
+makeToggle("Auto Quest",  "AutoQuest",  5)
+makeToggle("Auto Boss",   "AutoBoss",   6)
+makeToggle("Auto Sell",   "AutoSell",   7)
+makeToggle("Anti AFK",    "AntiAFK",    8)
 
---// COMPASS (needle rotates over a dial)
-local dial = Instance.new("Frame")
-dial.Size = UDim2.fromOffset(64, 64)
-dial.Position = UDim2.new(1, -84, 0, 18)
-dial.BackgroundColor3 = CONFIG.Backdrop
-dial.BackgroundTransparency = 0.15
-dial.BorderSizePixel = 0
-dial.Parent = gui
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, 0, 0, 18)
+status.BackgroundTransparency = 1
+status.Font = Enum.Font.Code
+status.TextSize = 11
+status.TextColor3 = Color3.fromRGB(140, 152, 166)
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.LayoutOrder = 9
+status.Text = "Remotes: sniffer ativo"
+status.Parent = list
 
-local dialCorner = Instance.new("UICorner")
-dialCorner.CornerRadius = UDim.new(1, 0)
-dialCorner.Parent = dial
-
-local dialStroke = Instance.new("UIStroke")
-dialStroke.Color = CONFIG.Accent
-dialStroke.Thickness = 1
-dialStroke.Transparency = 0.55
-dialStroke.Parent = dial
-
-local needle = Instance.new("Frame")
-needle.AnchorPoint = Vector2.new(0.5, 1)
-needle.Size = UDim2.new(0, 2, 0.38, 0)
-needle.Position = UDim2.new(0.5, 0, 0.5, 0)
-needle.BackgroundColor3 = CONFIG.Accent
-needle.BorderSizePixel = 0
-needle.Parent = dial
-
-local needlePivot = Instance.new("Frame")
-needlePivot.Size = UDim2.fromOffset(4, 4)
-needlePivot.AnchorPoint = Vector2.new(0.5, 0.5)
-needlePivot.Position = UDim2.new(0.5, 0, 0.5, 0)
-needlePivot.BackgroundColor3 = CONFIG.Accent
-needlePivot.BorderSizePixel = 0
-needlePivot.Parent = dial
-
-local pc = Instance.new("UICorner")
-pc.CornerRadius = UDim.new(1, 0)
-pc.Parent = needlePivot
-
---// TOGGLE
-local visible = true
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == CONFIG.Key then
-		visible = not visible
-		TweenService:Create(panel, TweenInfo.new(0.18), {
-			BackgroundTransparency = visible and 0.15 or 1
-		}):Play()
-		for _, lbl in ipairs(panel:GetDescendants()) do
-			if lbl:IsA("TextLabel") then
-				TweenService:Create(lbl, TweenInfo.new(0.18), {
-					TextTransparency = visible and 0 or 1
-				}):Play()
-			end
-		end
-		dial.Visible = visible
-	end
+-- Drag
+local dragging, dragStart, startPos
+title.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging, dragStart, startPos = true, i.Position, main.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+        local d = i.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                                  startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 
---// HELPERS
-local function round(n)
-	return math.floor(n + 0.5)
-end
-
-local function shortVec(v)
-	return string.format("%d, %d, %d", round(v.X), round(v.Y), round(v.Z))
-end
-
---// MAIN LOOP
-local fpsAccum, fpsFrames, fpsTimer = 0, 0, 0
-local lastPos = nil
-
-task.spawn(function()
-	local ping = 0
-	pcall(function() ping = player:GetNetworkPing() * 1000 end)
-
-	while gui.Parent do
-		local dt = RunService.RenderStepped:Wait()
-		fpsAccum += dt
-		fpsFrames += 1
-
-		if fpsAccum >= CONFIG.UpdateRate then
-			-- fps
-			rows.FPS.Text = tostring(round(fpsFrames / fpsAccum))
-			rows.FPS.TextColor3 = (fpsFrames / fpsAccum) < 30 and CONFIG.Warn or CONFIG.Accent
-			fpsAccum, fpsFrames = 0, 0
-
-			-- ping
-			local ok, p = pcall(function() return player:GetNetworkPing() * 1000 end)
-			if ok and p then
-				rows.Ping.Text = round(p) .. "ms"
-				rows.Ping.TextColor3 = p > 200 and CONFIG.Warn or CONFIG.Accent
-			end
-
-			-- character / vessel
-			local char = player.Character
-			local root = char and char:FindFirstChild("HumanoidRootPart")
-			if root then
-				local pos = root.Position
-				local look = root.CFrame.LookVector
-
-				-- heading: 0..360, north = -Z
-				local heading = math.deg(math.atan2(look.X, -look.Z))
-				heading = (heading % 360)
-
-				rows.Heading.Text = string.format("%03dÂ°", round(heading))
-				rows.Pos.Text = shortVec(pos)
-
-				local speed = 0
-				if lastPos then
-					speed = (pos - lastPos).Magnitude / CONFIG.UpdateRate
-				end
-				lastPos = pos
-				rows.Speed.Text = string.format("%.1f st/s", speed)
-
-				needle.Rotation = heading
-			else
-				rows.Heading.Text = "--"
-				rows.Pos.Text = "--"
-				rows.Speed.Text = "--"
-				lastPos = nil
-			end
-		end
-	end
-end)
-
---// CLEANUP ON RESPAWN SAFETY
-player.CharacterAdded:Connect(function()
-	lastPos = nil
+-- Toggle UI / Panic
+UserInputService.InputBegan:Connect(function(i, g)
+    if g then return end
+    if i.KeyCode == Enum.KeyCode.RightControl then
+        main.Visible = not main.Visible
+    elseif i.KeyCode == Enum.KeyCode.End then
+        for k, v in pairs(CFG) do
+            if type(v) == "boolean" and k ~= "AntiAFK" and k ~= "UseRemoteDmg" then
+                CFG[k] = false
+            end
+        end
+        for _, b in ipairs(list:GetChildren()) do
+            if b:IsA("TextButton") then
+                b.Text = b.Text:gsub("%[ ON %]", "[ OFF ]")
+                b.TextColor3 = Color3.fromRGB(220, 226, 232)
+            end
+        end
+    end
 end)
