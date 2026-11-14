@@ -1,5 +1,5 @@
 --[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | SOLMAR ISLAND FIXER (QUEST DIALOG FIX)
+      VOX SEAS | SOLMAR ISLAND FIXER (QUEST INTERCEPT FIX)
       Made by @ronzy.exe on discord
 ═══════════════════════════════════════════════════════════════]]
 
@@ -27,16 +27,13 @@ local CFG = {
     Bg             = Color3.fromRGB(14, 18, 24)
 }
 
-local isDoingQuest = false -- Trava o farm pra n dar TP de volta
+local isDoingQuest = false
 
 local function getTargetsForLevel()
     local lvl = 1
     local stats = LP:FindFirstChild("leaderstats")
-    if stats and stats:FindFirstChild("Level") then
-        lvl = stats.Level.Value
-    elseif stats and stats:FindFirstChild("Lvl") then
-        lvl = stats.Lvl.Value
-    end
+    if stats and stats:FindFirstChild("Level") then lvl = stats.Level.Value
+    elseif stats and stats:FindFirstChild("Lvl") then lvl = stats.Lvl.Value end
 
     if lvl < 5 then
         return {"cutlass pirate", "flint pirate"}
@@ -114,20 +111,32 @@ local function findTargets(radius)
     return list
 end
 
--- Função pesada pra clicar em botões de UI pelo texto
+-- Clicker Bruto pra UI (Botão, Label e VirtualUser)
 local function clickUIByText(textToFind)
+    local lowerText = textToFind:lower()
     for _, gui in ipairs(PG:GetDescendants()) do
         if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-            local txt = ""
-            if gui:IsA("TextButton") then txt = gui.Text:lower() end
-            
-            -- As vezes o texto ta dentro do botão
-            local label = gui:FindFirstChildWhichIsA("TextLabel")
-            if label then txt = label.Text:lower() end
+            if gui.Visible and gui.AbsoluteSize.X > 0 then
+                local txt = ""
+                if gui:IsA("TextButton") then txt = gui.Text:lower() end
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("TextLabel") and desc.Visible then
+                        txt = txt .. " " .. desc.Text:lower()
+                    end
+                end
 
-            if txt:find(textToFind:lower()) then
-                gui.MouseButton1Click:Fire() -- Simula o clique
-                return true
+                if txt:find(lowerText) then
+                    pcall(function() gui.MouseButton1Click:Fire() end)
+                    pcall(function() gui:Click() end)
+                    local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
+                    if size.X > 0 and size.Y > 0 then
+                        local center = Vector2.new(pos.X + size.X/2, pos.Y + size.Y/2)
+                        VirtualUser:CaptureController()
+                        VirtualUser:Button1Down(center)
+                        VirtualUser:Button1Up(center)
+                    end
+                    return true
+                end
             end
         end
     end
@@ -135,12 +144,16 @@ local function clickUIByText(textToFind)
 end
 
 --=============================================================
--- AUTO QUEST DIALOG
+-- LÓGICA DA QUEST (BLINDADA)
 --=============================================================
 local function doSolmarQuest()
+    if isDoingQuest then return end
+    isDoingQuest = true
+    
     local _, hrp = getChar()
-    if not hrp then return end
+    if not hrp then isDoingQuest = false return end
 
+    updateStatus("Procurando NPC...")
     local giverModel = nil
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name:lower():find("solmar") and obj.Name:lower():find("giver") then
@@ -150,43 +163,51 @@ local function doSolmarQuest()
     end
 
     if giverModel then
-        isDoingQuest = true -- Trava o Farm
+        updateStatus("Teleportando...")
         local pos = giverModel:FindFirstChild("HumanoidRootPart") or giverModel.PrimaryPart
         
         if pos then
-            -- 1. Teleporta pro NPC
+            -- 1. Teleporta
             hrp.CFrame = pos.CFrame + Vector3.new(0, 3, 0)
-            task.wait(0.5) 
+            task.wait(1) 
             
-            -- 2. Aciona o "Conversar" (ProximityPrompt ou ClickDetector)
+            -- 2. Aciona Prompt
+            updateStatus("Interagindo...")
             for _, prompt in ipairs(giverModel:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") then
-                    fireproximityprompt(prompt)
-                elseif prompt:IsA("ClickDetector") then
-                    fireclickdetector(prompt)
-                end
+                if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
+                if prompt:IsA("ClickDetector") then fireclickdetector(prompt) end
             end
             
-            -- Clica no botão "Conversar" da tela se aparecer
+            -- 3. Diálogo
+            task.wait(1.5)
+            updateStatus("Clicando 'Conversar'...")
             clickUIByText("conversar")
-            task.wait(0.8)
-
-            -- 3. Clica em "Mostre-me as missões"
-            if clickUIByText("mostre-me") or clickUIByText("mostrar") then
-                task.wait(0.8)
-            end
-
-            -- 4. Clica em "Aceitar"
-            if clickUIByText("aceitar") or clickUIByText("accept") then
-                task.wait(0.5)
-            end
-
-            -- 5. Fecha o quadro de missões se estiver aberto
-            clickUIByText("x") -- Botão de fechar
-            task.wait(0.5)
+            
+            task.wait(1)
+            updateStatus("Clicando 'Mostre-me'...")
+            clickUIByText("mostre-me")
+            clickUIByText("mostrar")
+            
+            -- 4. Aceitar
+            task.wait(1.5)
+            updateStatus("Aceitando...")
+            clickUIByText("aceitar")
+            clickUIByText("accept")
+            
+            -- 5. Fecha UI e Trava o Farm por 3s
+            task.wait(1)
+            clickUIByText("x")
+            
+            updateStatus("Aguardando Registro...")
+            task.wait(3) 
         end
-        isDoingQuest = false -- Libera o Farm
+    else
+        updateStatus("NPC nao encontrado!")
+        task.wait(1)
     end
+    
+    updateStatus("Pronto.")
+    isDoingQuest = false
 end
 
 --=============================================================
@@ -199,10 +220,9 @@ task.spawn(function()
             local _, hrp = getChar()
             if hrp then
                 local targets = findTargets(CFG.MagnetRadius)
-                for i, t in ipairs(targets) do
+                for _, t in ipairs(targets) do
                     if t.root and t.hum.Health > 0 then
-                        local offset = Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
-                        t.root.CFrame = hrp.CFrame + offset
+                        t.root.CFrame = hrp.CFrame + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
                     end
                 end
             end
@@ -240,7 +260,7 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(4) -- Checa a cada 4 segundos
+        task.wait(5)
         if CFG.AutoQuest and not isDoingQuest then 
             doSolmarQuest() 
         end
@@ -255,7 +275,7 @@ LP.Idled:Connect(function()
 end)
 
 --=============================================================
--- UI (Com Drag, Close e Open)
+-- UI (Com Drag, Close, Open e Status)
 --=============================================================
 local gui = Instance.new("ScreenGui")
 gui.Name = "VoxSeas_Solmar"
@@ -277,7 +297,7 @@ openBtn.Parent = gui
 Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
 
 local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(260, 240)
+main.Size = UDim2.fromOffset(260, 270)
 main.Position = UDim2.new(0, 20, 0, 60)
 main.BackgroundColor3 = CFG.Bg
 main.BorderSizePixel = 0
@@ -316,8 +336,23 @@ list.BackgroundTransparency = 1
 list.Parent = main
 
 local ll = Instance.new("UIListLayout", list)
-ll.Padding = UDim.new(0, 5)
+ll.Padding = UDim.new(0, 4)
 ll.SortOrder = Enum.SortOrder.LayoutOrder
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 0, 20)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.Code
+statusLabel.TextSize = 11
+statusLabel.TextColor3 = CFG.Accent
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.LayoutOrder = 10
+statusLabel.Text = "Status: Aguardando..."
+statusLabel.Parent = list
+
+function updateStatus(txt)
+    statusLabel.Text = "Status: " .. txt
+end
 
 local function makeToggle(name, key, order)
     local btn = Instance.new("TextButton")
@@ -347,6 +382,24 @@ makeToggle("Magnet & Kill", "Magnet", 2)
 makeToggle("Auto Farm (Teleport)", "AutoFarm", 3)
 makeToggle("Kill Aura (AoE)", "KillAura", 4)
 makeToggle("Anti AFK", "AntiAFK", 5)
+
+-- Botão de TESTE pra forçar a quest sem esperar
+local forceBtn = Instance.new("TextButton")
+forceBtn.Size = UDim2.new(1, 0, 0, 28)
+forceBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+forceBtn.Font = Enum.Font.Code
+forceBtn.TextSize = 12
+forceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+forceBtn.Text = "FORÇAR QUEST AGORA"
+forceBtn.LayoutOrder = 9
+forceBtn.Parent = list
+Instance.new("UICorner", forceBtn).CornerRadius = UDim.new(0, 6)
+
+forceBtn.MouseButton1Click:Connect(function()
+    if not isDoingQuest then
+        task.spawn(doSolmarQuest)
+    end
+end)
 
 closeBtn.MouseButton1Click:Connect(function()
     main.Visible = false
