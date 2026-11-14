@@ -1,0 +1,228 @@
+--[[ Vox Seas | Seafarer's HUD (LocalScript) ]]
+-- Place in: StarterPlayer > StarterPlayerScripts
+-- Toggle with: RightShift
+
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService  = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+--// CONFIG
+local CONFIG = {
+	Accent      = Color3.fromRGB(90, 200, 255),
+	Backdrop    = Color3.fromRGB(14, 18, 24),
+	Warn        = Color3.fromRGB(255, 190, 70),
+	Key         = Enum.KeyCode.RightShift,
+	UpdateRate  = 1 / 30,
+}
+
+--// BUILD UI
+local gui = Instance.new("ScreenGui")
+gui.Name = "VoxSeas_HUD"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 50
+gui.Parent = playerGui
+
+local panel = Instance.new("Frame")
+panel.Size = UDim2.fromOffset(230, 132)
+panel.Position = UDim2.new(0, 18, 0, 18)
+panel.BackgroundColor3 = CONFIG.Backdrop
+panel.BackgroundTransparency = 0.15
+panel.BorderSizePixel = 0
+panel.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 8)
+corner.Parent = panel
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = CONFIG.Accent
+stroke.Thickness = 1
+stroke.Transparency = 0.55
+stroke.Parent = panel
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop    = UDim.new(0, 10)
+padding.PaddingLeft   = UDim.new(0, 12)
+padding.PaddingRight  = UDim.new(0, 12)
+padding.PaddingBottom = UDim.new(0, 10)
+padding.Parent = panel
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 4)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = panel
+
+local function makeRow(order, labelText)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 18)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = order
+	row.Parent = panel
+
+	local key = Instance.new("TextLabel")
+	key.Size = UDim2.new(0.45, 0, 1, 0)
+	key.BackgroundTransparency = 1
+	key.Font = Enum.Font.Code
+	key.TextSize = 12
+	key.TextXAlignment = Enum.TextXAlignment.Left
+	key.TextColor3 = Color3.fromRGB(140, 152, 166)
+	key.Text = labelText
+	key.Parent = row
+
+	local val = Instance.new("TextLabel")
+	val.Size = UDim2.new(0.55, 0, 1, 0)
+	val.Position = UDim2.new(0.45, 0, 0, 0)
+	val.BackgroundTransparency = 1
+	val.Font = Enum.Font.Code
+	val.TextSize = 12
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.TextColor3 = CONFIG.Accent
+	val.Text = "--"
+	val.Parent = row
+
+	return val
+end
+
+local rows = {
+	FPS      = makeRow(1, "FPS"),
+	Ping     = makeRow(2, "PING"),
+	Heading  = makeRow(3, "HEADING"),
+	Pos      = makeRow(4, "POS"),
+	Speed    = makeRow(5, "SPEED"),
+}
+
+--// COMPASS (needle rotates over a dial)
+local dial = Instance.new("Frame")
+dial.Size = UDim2.fromOffset(64, 64)
+dial.Position = UDim2.new(1, -84, 0, 18)
+dial.BackgroundColor3 = CONFIG.Backdrop
+dial.BackgroundTransparency = 0.15
+dial.BorderSizePixel = 0
+dial.Parent = gui
+
+local dialCorner = Instance.new("UICorner")
+dialCorner.CornerRadius = UDim.new(1, 0)
+dialCorner.Parent = dial
+
+local dialStroke = Instance.new("UIStroke")
+dialStroke.Color = CONFIG.Accent
+dialStroke.Thickness = 1
+dialStroke.Transparency = 0.55
+dialStroke.Parent = dial
+
+local needle = Instance.new("Frame")
+needle.AnchorPoint = Vector2.new(0.5, 1)
+needle.Size = UDim2.new(0, 2, 0.38, 0)
+needle.Position = UDim2.new(0.5, 0, 0.5, 0)
+needle.BackgroundColor3 = CONFIG.Accent
+needle.BorderSizePixel = 0
+needle.Parent = dial
+
+local needlePivot = Instance.new("Frame")
+needlePivot.Size = UDim2.fromOffset(4, 4)
+needlePivot.AnchorPoint = Vector2.new(0.5, 0.5)
+needlePivot.Position = UDim2.new(0.5, 0, 0.5, 0)
+needlePivot.BackgroundColor3 = CONFIG.Accent
+needlePivot.BorderSizePixel = 0
+needlePivot.Parent = dial
+
+local pc = Instance.new("UICorner")
+pc.CornerRadius = UDim.new(1, 0)
+pc.Parent = needlePivot
+
+--// TOGGLE
+local visible = true
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == CONFIG.Key then
+		visible = not visible
+		TweenService:Create(panel, TweenInfo.new(0.18), {
+			BackgroundTransparency = visible and 0.15 or 1
+		}):Play()
+		for _, lbl in ipairs(panel:GetDescendants()) do
+			if lbl:IsA("TextLabel") then
+				TweenService:Create(lbl, TweenInfo.new(0.18), {
+					TextTransparency = visible and 0 or 1
+				}):Play()
+			end
+		end
+		dial.Visible = visible
+	end
+end)
+
+--// HELPERS
+local function round(n)
+	return math.floor(n + 0.5)
+end
+
+local function shortVec(v)
+	return string.format("%d, %d, %d", round(v.X), round(v.Y), round(v.Z))
+end
+
+--// MAIN LOOP
+local fpsAccum, fpsFrames, fpsTimer = 0, 0, 0
+local lastPos = nil
+
+task.spawn(function()
+	local ping = 0
+	pcall(function() ping = player:GetNetworkPing() * 1000 end)
+
+	while gui.Parent do
+		local dt = RunService.RenderStepped:Wait()
+		fpsAccum += dt
+		fpsFrames += 1
+
+		if fpsAccum >= CONFIG.UpdateRate then
+			-- fps
+			rows.FPS.Text = tostring(round(fpsFrames / fpsAccum))
+			rows.FPS.TextColor3 = (fpsFrames / fpsAccum) < 30 and CONFIG.Warn or CONFIG.Accent
+			fpsAccum, fpsFrames = 0, 0
+
+			-- ping
+			local ok, p = pcall(function() return player:GetNetworkPing() * 1000 end)
+			if ok and p then
+				rows.Ping.Text = round(p) .. "ms"
+				rows.Ping.TextColor3 = p > 200 and CONFIG.Warn or CONFIG.Accent
+			end
+
+			-- character / vessel
+			local char = player.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				local pos = root.Position
+				local look = root.CFrame.LookVector
+
+				-- heading: 0..360, north = -Z
+				local heading = math.deg(math.atan2(look.X, -look.Z))
+				heading = (heading % 360)
+
+				rows.Heading.Text = string.format("%03dÂ°", round(heading))
+				rows.Pos.Text = shortVec(pos)
+
+				local speed = 0
+				if lastPos then
+					speed = (pos - lastPos).Magnitude / CONFIG.UpdateRate
+				end
+				lastPos = pos
+				rows.Speed.Text = string.format("%.1f st/s", speed)
+
+				needle.Rotation = heading
+			else
+				rows.Heading.Text = "--"
+				rows.Pos.Text = "--"
+				rows.Speed.Text = "--"
+				lastPos = nil
+			end
+		end
+	end
+end)
+
+--// CLEANUP ON RESPAWN SAFETY
+player.CharacterAdded:Connect(function()
+	lastPos = nil
+end)
