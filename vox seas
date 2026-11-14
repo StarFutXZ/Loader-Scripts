@@ -1,17 +1,14 @@
 --[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | NORMAL AUTO-FARM SUITE  (RightCtrl = UI)
-      Features: Auto Farm, Auto Chest, Auto Quest, Auto Boss,
-                Auto Attack, Kill Aura, Auto Sell, Anti-AFK,
-                Remote Sniffer (fallback de dano)
+      VOX SEAS | FIRST ISLAND GRINDER (Cutlass/Flint/Marines)
+      Features: Auto Accept/Complete Quest Board, Auto Farm by Name,
+                Teleport-Kill, Anti-AFK.
       Made by @ronzy.exe on discord
 ═══════════════════════════════════════════════════════════════]]
 
 local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser      = game:GetService("VirtualUser")
 local Workspace        = game:GetService("Workspace")
-local ReplicatedStorage= game:GetService("ReplicatedStorage")
 
 local LP = Players.LocalPlayer
 local PG = LP:WaitForChild("PlayerGui")
@@ -20,25 +17,22 @@ local PG = LP:WaitForChild("PlayerGui")
 -- CONFIG
 --=============================================================
 local CFG = {
-    Radius         = 300,
-    AttackDelay    = 0.30,
-    AuraRadius     = 45,
-    ChestRadius    = 400,
-    QuestRadius    = 500,
-    SellRadius     = 50,
-    TpHeight       = 3,
+    Radius         = 500,
+    AttackDelay    = 0.25,
+    TeleportOffset = 4,
     AutoFarm       = false,
-    AutoAttack     = false,
-    AutoChest      = false,
     AutoQuest      = false,
-    AutoBoss       = false,
-    AutoSell       = false,
     KillAura       = false,
     AntiAFK        = true,
-    UseRemoteDmg   = true,   -- tenta achar remote de dano
     Accent         = Color3.fromRGB(90, 200, 255),
-    Warn           = Color3.fromRGB(255, 190, 70),
     Bg             = Color3.fromRGB(14, 18, 24),
+    -- NPCs exatos da primeira ilha baseados na sua print
+    TargetNPCs     = {
+        "cutlass pirate", 
+        "flint pirate", 
+        "marine recruit", 
+        "marine corporal"
+    }
 }
 
 --=============================================================
@@ -49,28 +43,20 @@ local function getChar()
     if not c then return nil end
     local hrp = c:FindFirstChild("HumanoidRootPart")
     local hum = c:FindFirstChildOfClass("Humanoid")
-    if hrp and hum then return c, hrp, hum end
+    if hrp and hum and hum.Health > 0 then return c, hrp, hum end
     return nil
 end
 
-local function isPlayerModel(m)
-    return Players:GetPlayerFromCharacter(m) ~= nil
-end
-
-local function alive(hum)
-    return hum and hum.Health > 0
-end
-
-local function equipTool()
-    local _, _, hum = getChar()
-    if not hum then return nil end
-    local tool = LP.Character:FindFirstChildOfClass("Tool")
+local function equipWeapon()
+    local c = LP.Character
+    if not c then return nil end
+    local tool = c:FindFirstChildOfClass("Tool")
     if not tool then
         local bp = LP:FindFirstChild("Backpack")
         if bp then
             for _, t in ipairs(bp:GetChildren()) do
                 if t:IsA("Tool") then
-                    hum:EquipTool(t)
+                    c:FindFirstChildOfClass("Humanoid"):EquipTool(t)
                     task.wait(0.05)
                     return t
                 end
@@ -80,260 +66,134 @@ local function equipTool()
     return tool
 end
 
---=============================================================
--- REMOTE SNIFFER (fallback pra achar remote de dano)
---=============================================================
-local damageRemotes = {}
-local function sniffRemotes(container)
-    for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            local n = obj.Name:lower()
-            if n:find("attack") or n:find("damage") or n:find("hit")
-            or n:find("combat") or n:find("m1") or n:find("swing") then
-                damageRemotes[obj] = true
-            end
-        end
-    end
-end
-pcall(sniffRemotes, ReplicatedStorage)
-pcall(sniffRemotes, Workspace)
-
-local function fireDamage(target)
-    if not CFG.UseRemoteDmg then return false end
-    local fired = false
-    for remote in pairs(damageRemotes) do
-        pcall(function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(target)
-            else
-                remote:InvokeServer(target)
-            end
-            fired = true
-        end)
-    end
-    return fired
-end
-
---=============================================================
--- COMBATE
---=============================================================
-local function swing(target)
-    local tool = equipTool()
+local function swing()
+    local tool = equipWeapon()
     if tool then
         pcall(function()
             tool:Activate()
-            local r = tool:FindFirstChild("Remote") or tool:FindFirstChild("Event")
-            if r and r:IsA("RemoteEvent") then
-                if target then r:FireServer(target) else r:FireServer() end
-            end
+            local rem = tool:FindFirstChild("Remote") or tool:FindFirstChildWhichIsA("RemoteEvent")
+            if rem then rem:FireServer() end
         end)
     end
-    if target then fireDamage(target) end
 end
 
-local function findEnemies(radius)
-    local list = {}
-    local _, hrp = getChar()
-    if not hrp then return list end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and not isPlayerModel(obj) then
-            local hum  = obj:FindFirstChildOfClass("Humanoid")
-            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj.PrimaryPart
-            if alive(hum) and root then
-                local d = (root.Position - hrp.Position).Magnitude
-                if d <= radius then
-                    table.insert(list, {model = obj, root = root, hum = hum, dist = d})
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.dist < b.dist end)
-    return list
-end
-
-local function findNamed(radius, ...)
-    local names = {...}
-    local list = {}
-    local _, hrp = getChar()
-    if not hrp then return list end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local n = obj.Name:lower()
-            for _, key in ipairs(names) do
-                if n:find(key) then
-                    local pos = obj:IsA("BasePart") and obj
-                        or (obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart"))
-                    if pos then
-                        local d = (pos.Position - hrp.Position).Magnitude
-                        if d <= radius then
-                            table.insert(list, {obj = obj, pos = pos, dist = d})
-                        end
-                    end
-                    break
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.dist < b.dist end)
-    return list
-end
-
-local function triggerPromptNear(pos, radius)
-    radius = radius or 15
-    local best, bestD
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.Enabled then
-            local parent = obj.Parent
-            local ppos = parent and (
-                parent:IsA("BasePart") and parent.Position
-                or parent:IsA("Model") and (parent.PrimaryPart and parent.PrimaryPart.Position)
-            )
-            if ppos then
-                local d = (ppos - pos).Magnitude
-                if d <= radius and (not bestD or d < bestD) then
-                    best, bestD = obj, d
-                end
-            end
-        end
-    end
-    if best then
-        pcall(function() fireproximityprompt(best) end)
-        return true
+local function isTarget(npcName)
+    local lowerName = npcName:lower()
+    for _, target in ipairs(CFG.TargetNPCs) do
+        if lowerName:find(target) then return true end
     end
     return false
 end
 
-local function tp(cf)
+local function findTargets(radius)
+    local list = {}
     local _, hrp = getChar()
-    if hrp then hrp.CFrame = cf end
+    if not hrp then return list end
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and isTarget(obj.Name) then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+            if hum and hum.Health > 0 and root then
+                local d = (root.Position - hrp.Position).Magnitude
+                if d <= radius then
+                    table.insert(list, {model = obj, root = root, dist = d})
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    return list
 end
 
-local function tpToTarget(root, offset)
+--=============================================================
+-- AUTO QUEST BOARD (Proximity + UI Clicker)
+--=============================================================
+local function handleQuestBoard()
     local _, hrp = getChar()
     if not hrp then return end
-    local dir = (hrp.Position - root.Position)
-    if dir.Magnitude < 0.1 then dir = Vector3.new(0, 0, 1) end
-    dir = dir.Unit
-    tp(root.CFrame + dir * (offset or 6) + Vector3.new(0, CFG.TpHeight, 0))
+
+    -- 1. Acha o Quest Board físico
+    local boardPrompt
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (obj.Parent.Name:lower():find("quest") or obj.Parent.Name:lower():find("board")) then
+            boardPrompt = obj
+            break
+        end
+    end
+
+    if boardPrompt then
+        -- Teleporta pro board e interage
+        local bPos = boardPrompt.Parent:IsA("BasePart") and boardPrompt.Parent.Position or boardPrompt.Parent.PrimaryPart.Position
+        hrp.CFrame = CFrame.new(bPos + Vector3.new(0, 3, 0))
+        task.wait(0.2)
+        fireproximityprompt(boardPrompt)
+        
+        -- 2. Clica nos botões do UI (Accept / Claim / Complete)
+        task.wait(0.5)
+        for _, gui in ipairs(PG:GetDescendants()) do
+            if gui:IsA("TextButton") then
+                local txt = gui.Text:lower()
+                if txt:find("accept") or txt:find("claim") or txt:find("complete") or txt:find("turn in") then
+                    gui:Click() -- Usa o metatable padrão do executor
+                    task.wait(0.1)
+                end
+            end
+        end
+        
+        -- Fecha o UI se tiver um botão de fechar (X)
+        for _, gui in ipairs(PG:GetDescendants()) do
+            if gui:IsA("TextButton") and (gui.Text == "X" or gui.Name:lower() == "close") then
+                gui:Click()
+                break
+            end
+        end
+    end
 end
 
 --=============================================================
 -- LOOPS
 --=============================================================
-task.spawn(function() -- Auto Attack
+task.spawn(function() -- AUTO FARM
     while true do
         task.wait(CFG.AttackDelay)
-        if CFG.AutoAttack then
-            local e = findEnemies(CFG.Radius)
-            if e[1] then swing(e[1].model) end
-        end
-    end
-end)
-
-task.spawn(function() -- Kill Aura
-    while true do
-        task.wait(0.12)
-        if CFG.KillAura then
-            local e = findEnemies(CFG.AuraRadius)
-            if #e > 0 then
-                for _, t in ipairs(e) do swing(t.model) end
-            end
-        end
-    end
-end)
-
-task.spawn(function() -- Auto Farm
-    while true do
-        task.wait(0.15)
         if CFG.AutoFarm then
-            local c, _, hum = getChar()
-            if c and alive(hum) then
-                local e = findEnemies(CFG.Radius)
-                if e[1] then
-                    tpToTarget(e[1].root)
-                    task.wait(0.05)
-                    swing(e[1].model)
+            local c, hrp, hum = getChar()
+            if c and hum.Health > 0 then
+                local targets = findTargets(CFG.Radius)
+                if targets[1] then
+                    local t = targets[1]
+                    local dir = (hrp.Position - t.root.Position).Unit
+                    hrp.CFrame = t.root.CFrame + dir * CFG.TeleportOffset + Vector3.new(0, 2, 0)
+                    swing()
                 end
             end
         end
     end
 end)
 
-task.spawn(function() -- Auto Chest
+task.spawn(function() -- KILL AURA
     while true do
-        task.wait(0.6)
-        if CFG.AutoChest then
-            local c = findNamed(CFG.ChestRadius, "chest", "crate", "barrel", "treasure", "loot")
-            if c[1] then
-                local _, hrp = getChar()
-                if hrp then
-                    tp(c[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
-                    task.wait(0.2)
-                    triggerPromptNear(c[1].pos.Position, 20)
-                end
+        task.wait(0.1)
+        if CFG.KillAura then
+            local targets = findTargets(45)
+            if #targets > 0 then
+                swing()
             end
         end
     end
 end)
 
-task.spawn(function() -- Auto Quest
-    while true do
-        task.wait(1)
-        if CFG.AutoQuest then
-            local q = findNamed(CFG.QuestRadius, "quest", "mission", "giver", "board", "npc")
-            if q[1] then
-                local _, hrp = getChar()
-                if hrp then
-                    tp(q[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
-                    task.wait(0.25)
-                    triggerPromptNear(q[1].pos.Position, 25)
-                end
-            end
-        end
-    end
-end)
-
-task.spawn(function() -- Auto Boss
-    while true do
-        task.wait(0.3)
-        if CFG.AutoBoss then
-            local _, hrp = getChar()
-            if hrp then
-                for _, obj in ipairs(Workspace:GetDescendants()) do
-                    if obj:IsA("Model") and obj.Name:lower():find("boss") then
-                        local hum  = obj:FindFirstChildOfClass("Humanoid")
-                        local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
-                        if alive(hum) and root then
-                            tpToTarget(root)
-                            task.wait(0.05)
-                            swing(obj)
-                            break
-                        end
-                    end
-                end
-            end
-        end
-    end
-end)
-
-task.spawn(function() -- Auto Sell
+task.spawn(function() -- AUTO QUEST
     while true do
         task.wait(2)
-        if CFG.AutoSell then
-            local s = findNamed(CFG.SellRadius, "sell", "merchant", "vendor")
-            if s[1] then
-                local _, hrp = getChar()
-                if hrp then
-                    tp(s[1].pos.CFrame + Vector3.new(0, CFG.TpHeight, 0))
-                    task.wait(0.2)
-                    triggerPromptNear(s[1].pos.Position, 20)
-                end
-            end
+        if CFG.AutoQuest then
+            handleQuestBoard()
         end
     end
 end)
 
--- Anti AFK
+-- ANTI AFK
 LP.Idled:Connect(function()
     if CFG.AntiAFK then
         VirtualUser:CaptureController()
@@ -345,20 +205,20 @@ end)
 -- UI
 --=============================================================
 local gui = Instance.new("ScreenGui")
-gui.Name = "VoxSeas_Suite"
+gui.Name = "VoxSeas_FirstIsland"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.DisplayOrder = 100
 gui.Parent = PG
 
 local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(270, 400)
+main.Size = UDim2.fromOffset(260, 220)
 main.Position = UDim2.new(0, 20, 0, 20)
 main.BackgroundColor3 = CFG.Bg
 main.BorderSizePixel = 0
 main.Parent = gui
 
-local uc = Instance.new("UICorner", main); uc.CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 local st = Instance.new("UIStroke", main)
 st.Color = CFG.Accent; st.Thickness = 1; st.Transparency = 0.5
 
@@ -367,10 +227,10 @@ title.Size = UDim2.new(1, -20, 0, 32)
 title.Position = UDim2.new(0, 10, 0, 6)
 title.BackgroundTransparency = 1
 title.Font = Enum.Font.Code
-title.TextSize = 15
+title.TextSize = 14
 title.TextColor3 = CFG.Accent
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "VOX SEAS | SUITE"
+title.Text = "ISLE 1 GRINDER (LVL 1-10)"
 title.Parent = main
 
 local list = Instance.new("Frame")
@@ -385,12 +245,11 @@ ll.SortOrder = Enum.SortOrder.LayoutOrder
 
 local function makeToggle(name, key, order)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 26)
+    btn.Size = UDim2.new(1, 0, 0, 28)
     btn.BackgroundColor3 = Color3.fromRGB(30, 36, 44)
     btn.BorderSizePixel = 0
-    btn.AutoButtonColor = true
     btn.Font = Enum.Font.Code
-    btn.TextSize = 12
+    btn.TextSize = 13
     btn.TextColor3 = Color3.fromRGB(220, 226, 232)
     btn.Text = "[ OFF ]  " .. name
     btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -407,27 +266,12 @@ local function makeToggle(name, key, order)
     end)
 end
 
-makeToggle("Auto Farm",   "AutoFarm",   1)
-makeToggle("Auto Attack", "AutoAttack", 2)
-makeToggle("Kill Aura",   "KillAura",   3)
-makeToggle("Auto Chest",  "AutoChest",  4)
-makeToggle("Auto Quest",  "AutoQuest",  5)
-makeToggle("Auto Boss",   "AutoBoss",   6)
-makeToggle("Auto Sell",   "AutoSell",   7)
-makeToggle("Anti AFK",    "AntiAFK",    8)
+makeToggle("Auto Accept/Complete Quest", "AutoQuest", 1)
+makeToggle("Auto Farm (Teleport)", "AutoFarm", 2)
+makeToggle("Kill Aura (No TP)", "KillAura", 3)
+makeToggle("Anti AFK", "AntiAFK", 4)
 
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, 0, 0, 18)
-status.BackgroundTransparency = 1
-status.Font = Enum.Font.Code
-status.TextSize = 11
-status.TextColor3 = Color3.fromRGB(140, 152, 166)
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.LayoutOrder = 9
-status.Text = "Remotes: sniffer ativo"
-status.Parent = list
-
--- Drag
+-- Drag UI
 local dragging, dragStart, startPos
 title.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -437,30 +281,17 @@ end)
 UserInputService.InputChanged:Connect(function(i)
     if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
         local d = i.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-                                  startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
 end)
 
--- Toggle UI / Panic
+-- Toggle UI
 UserInputService.InputBegan:Connect(function(i, g)
     if g then return end
     if i.KeyCode == Enum.KeyCode.RightControl then
         main.Visible = not main.Visible
-    elseif i.KeyCode == Enum.KeyCode.End then
-        for k, v in pairs(CFG) do
-            if type(v) == "boolean" and k ~= "AntiAFK" and k ~= "UseRemoteDmg" then
-                CFG[k] = false
-            end
-        end
-        for _, b in ipairs(list:GetChildren()) do
-            if b:IsA("TextButton") then
-                b.Text = b.Text:gsub("%[ ON %]", "[ OFF ]")
-                b.TextColor3 = Color3.fromRGB(220, 226, 232)
-            end
-        end
     end
 end)
