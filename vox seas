@@ -1,7 +1,7 @@
 --[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | FIRST ISLAND GRINDER (Cutlass/Flint/Marines)
-      Features: Auto Accept/Complete Quest Board, Auto Farm by Name,
-                Teleport-Kill, Anti-AFK.
+      VOX SEAS | SOLMAR ISLAND FIXED GRINDER
+      Features: Level-Based Target Switching, NPC Magnet (Gather),
+                Solmar Quest Giver Auto-Accept, Kill Aura.
       Made by @ronzy.exe on discord
 ═══════════════════════════════════════════════════════════════]]
 
@@ -17,23 +17,35 @@ local PG = LP:WaitForChild("PlayerGui")
 -- CONFIG
 --=============================================================
 local CFG = {
-    Radius         = 500,
-    AttackDelay    = 0.25,
-    TeleportOffset = 4,
+    Radius         = 400,
+    AttackDelay    = 0.20,
+    MagnetRadius   = 60,
     AutoFarm       = false,
     AutoQuest      = false,
     KillAura       = false,
+    Magnet         = false,
     AntiAFK        = true,
     Accent         = Color3.fromRGB(90, 200, 255),
-    Bg             = Color3.fromRGB(14, 18, 24),
-    -- NPCs exatos da primeira ilha baseados na sua print
-    TargetNPCs     = {
-        "cutlass pirate", 
-        "flint pirate", 
-        "marine recruit", 
-        "marine corporal"
-    }
+    Bg             = Color3.fromRGB(14, 18, 24)
 }
+
+-- Alvos por level (Baseado na sua print)
+local function getTargetsForLevel()
+    local lvl = 1
+    -- Tenta achar o level no jogo (leaderstats, etc)
+    local stats = LP:FindFirstChild("leaderstats")
+    if stats and stats:FindFirstChild("Level") then
+        lvl = stats.Level.Value
+    elseif stats and stats:FindFirstChild("Lvl") then
+        lvl = stats.Lvl.Value
+    end
+
+    if lvl < 5 then
+        return {"cutlass pirate", "flint pirate"} -- Missão 1-5
+    else
+        return {"marine recruit", "marine corporal", "corrupt marine"} -- Missão 5-10
+    end
+end
 
 --=============================================================
 -- HELPERS
@@ -77,75 +89,74 @@ local function swing()
     end
 end
 
-local function isTarget(npcName)
-    local lowerName = npcName:lower()
-    for _, target in ipairs(CFG.TargetNPCs) do
-        if lowerName:find(target) then return true end
-    end
-    return false
-end
-
 local function findTargets(radius)
     local list = {}
     local _, hrp = getChar()
     if not hrp then return list end
+    local targets = getTargetsForLevel()
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and isTarget(obj.Name) then
-            local hum = obj:FindFirstChildOfClass("Humanoid")
-            local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
-            if hum and hum.Health > 0 and root then
-                local d = (root.Position - hrp.Position).Magnitude
-                if d <= radius then
-                    table.insert(list, {model = obj, root = root, dist = d})
+        if obj:IsA("Model") then
+            local lowerName = obj.Name:lower()
+            for _, targetName in ipairs(targets) do
+                if lowerName:find(targetName) then
+                    local hum = obj:FindFirstChildOfClass("Humanoid")
+                    local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
+                    if hum and hum.Health > 0 and root then
+                        local d = (root.Position - hrp.Position).Magnitude
+                        if d <= radius then
+                            table.insert(list, {model = obj, root = root, hum = hum, dist = d})
+                        end
+                        break
+                    end
                 end
             end
         end
     end
-    table.sort(list, function(a, b) return a.dist < b.dist end)
     return list
 end
 
 --=============================================================
--- AUTO QUEST BOARD (Proximity + UI Clicker)
+-- AUTO QUEST GIVER (Solmar)
 --=============================================================
-local function handleQuestBoard()
+local function doSolmarQuest()
     local _, hrp = getChar()
     if not hrp then return end
 
-    -- 1. Acha o Quest Board físico
-    local boardPrompt
+    local giverModel = nil
+    -- Procura o NPC "Solmar island quest giver" exatamente
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and (obj.Parent.Name:lower():find("quest") or obj.Parent.Name:lower():find("board")) then
-            boardPrompt = obj
+        if obj:IsA("Model") and obj.Name:lower():find("solmar") and obj.Name:lower():find("giver") then
+            giverModel = obj
             break
         end
     end
 
-    if boardPrompt then
-        -- Teleporta pro board e interage
-        local bPos = boardPrompt.Parent:IsA("BasePart") and boardPrompt.Parent.Position or boardPrompt.Parent.PrimaryPart.Position
-        hrp.CFrame = CFrame.new(bPos + Vector3.new(0, 3, 0))
-        task.wait(0.2)
-        fireproximityprompt(boardPrompt)
-        
-        -- 2. Clica nos botões do UI (Accept / Claim / Complete)
-        task.wait(0.5)
-        for _, gui in ipairs(PG:GetDescendants()) do
-            if gui:IsA("TextButton") then
-                local txt = gui.Text:lower()
-                if txt:find("accept") or txt:find("claim") or txt:find("complete") or txt:find("turn in") then
-                    gui:Click() -- Usa o metatable padrão do executor
-                    task.wait(0.1)
+    if giverModel then
+        local pos = giverModel:FindFirstChild("HumanoidRootPart") or giverModel.PrimaryPart
+        if pos then
+            -- Teleporta pro NPC
+            hrp.CFrame = pos.CFrame + Vector3.new(0, 3, 0)
+            task.wait(0.3)
+            
+            -- Procura ProximityPrompt e ativa
+            for _, prompt in ipairs(giverModel:GetDescendants()) do
+                if prompt:IsA("ProximityPrompt") then
+                    fireproximityprompt(prompt)
+                    task.wait(0.5)
+                    break
                 end
             end
-        end
-        
-        -- Fecha o UI se tiver um botão de fechar (X)
-        for _, gui in ipairs(PG:GetDescendants()) do
-            if gui:IsA("TextButton") and (gui.Text == "X" or gui.Name:lower() == "close") then
-                gui:Click()
-                break
+
+            -- Clica no botão "Accept" ou "Aceitar" na tela
+            for _, gui in ipairs(PG:GetDescendants()) do
+                if gui:IsA("TextButton") then
+                    local txt = gui.Text:lower()
+                    if txt:find("accept") or txt:find("aceitar") then
+                        gui:Click()
+                        break
+                    end
+                end
             end
         end
     end
@@ -154,17 +165,39 @@ end
 --=============================================================
 -- LOOPS
 --=============================================================
-task.spawn(function() -- AUTO FARM
+
+-- MAGNET (Junta os NPCs num só lugar e mata)
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if CFG.Magnet then
+            local _, hrp = getChar()
+            if hrp then
+                local targets = findTargets(CFG.MagnetRadius)
+                for i, t in ipairs(targets) do
+                    if t.root and t.hum.Health > 0 then
+                        -- Puxa o NPC pra frente do player
+                        local offset = Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
+                        t.root.CFrame = hrp.CFrame + offset
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- AUTO FARM (Teleporta)
+task.spawn(function()
     while true do
         task.wait(CFG.AttackDelay)
-        if CFG.AutoFarm then
+        if CFG.AutoFarm and not CFG.Magnet then
             local c, hrp, hum = getChar()
             if c and hum.Health > 0 then
                 local targets = findTargets(CFG.Radius)
-                if targets[1] then
+                if #targets > 0 then
                     local t = targets[1]
                     local dir = (hrp.Position - t.root.Position).Unit
-                    hrp.CFrame = t.root.CFrame + dir * CFG.TeleportOffset + Vector3.new(0, 2, 0)
+                    hrp.CFrame = t.root.CFrame + dir * 4 + Vector3.new(0, 2, 0)
                     swing()
                 end
             end
@@ -172,11 +205,12 @@ task.spawn(function() -- AUTO FARM
     end
 end)
 
-task.spawn(function() -- KILL AURA
+-- KILL AURA
+task.spawn(function()
     while true do
-        task.wait(0.1)
+        task.wait(0.15)
         if CFG.KillAura then
-            local targets = findTargets(45)
+            local targets = findTargets(CFG.Radius)
             if #targets > 0 then
                 swing()
             end
@@ -184,11 +218,12 @@ task.spawn(function() -- KILL AURA
     end
 end)
 
-task.spawn(function() -- AUTO QUEST
+-- AUTO QUEST
+task.spawn(function()
     while true do
-        task.wait(2)
+        task.wait(3)
         if CFG.AutoQuest then
-            handleQuestBoard()
+            doSolmarQuest()
         end
     end
 end)
@@ -205,14 +240,14 @@ end)
 -- UI
 --=============================================================
 local gui = Instance.new("ScreenGui")
-gui.Name = "VoxSeas_FirstIsland"
+gui.Name = "VoxSeas_Solmar"
 gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.DisplayOrder = 100
 gui.Parent = PG
 
 local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(260, 220)
+main.Size = UDim2.fromOffset(260, 240)
 main.Position = UDim2.new(0, 20, 0, 20)
 main.BackgroundColor3 = CFG.Bg
 main.BorderSizePixel = 0
@@ -230,7 +265,7 @@ title.Font = Enum.Font.Code
 title.TextSize = 14
 title.TextColor3 = CFG.Accent
 title.TextXAlignment = Enum.TextXAlignment.Left
-title.Text = "ISLE 1 GRINDER (LVL 1-10)"
+title.Text = "SOLMAR ISLAND FIXER"
 title.Parent = main
 
 local list = Instance.new("Frame")
@@ -249,7 +284,7 @@ local function makeToggle(name, key, order)
     btn.BackgroundColor3 = Color3.fromRGB(30, 36, 44)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.Code
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.TextColor3 = Color3.fromRGB(220, 226, 232)
     btn.Text = "[ OFF ]  " .. name
     btn.TextXAlignment = Enum.TextXAlignment.Left
@@ -266,10 +301,11 @@ local function makeToggle(name, key, order)
     end)
 end
 
-makeToggle("Auto Accept/Complete Quest", "AutoQuest", 1)
-makeToggle("Auto Farm (Teleport)", "AutoFarm", 2)
-makeToggle("Kill Aura (No TP)", "KillAura", 3)
-makeToggle("Anti AFK", "AntiAFK", 4)
+makeToggle("Auto Solmar Quest (Accept)", "AutoQuest", 1)
+makeToggle("Magnet & Kill (Gather NPCs)", "Magnet", 2)
+makeToggle("Auto Farm (Teleport)", "AutoFarm", 3)
+makeToggle("Kill Aura (AoE)", "KillAura", 4)
+makeToggle("Anti AFK", "AntiAFK", 5)
 
 -- Drag UI
 local dragging, dragStart, startPos
