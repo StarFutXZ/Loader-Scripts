@@ -1,5 +1,5 @@
 --[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | SOLMAR ISLAND FIXER (QUEST INTERCEPT FIX)
+      VOX SEAS | SOLMAR ISLAND FIXER (CUSTOM UI CLICKER)
       Made by @ronzy.exe on discord
 ═══════════════════════════════════════════════════════════════]]
 
@@ -111,32 +111,34 @@ local function findTargets(radius)
     return list
 end
 
--- Clicker Bruto pra UI (Botão, Label e VirtualUser)
-local function clickUIByText(textToFind)
+-- ULTRA CLICKER (Procura em TUDO: PlayerGui, CoreGui, Workspace BillboardGuis)
+local function ultraClickByText(textToFind)
     local lowerText = textToFind:lower()
-    for _, gui in ipairs(PG:GetDescendants()) do
-        if gui:IsA("TextButton") or gui:IsA("ImageButton") then
-            if gui.Visible and gui.AbsoluteSize.X > 0 then
-                local txt = ""
-                if gui:IsA("TextButton") then txt = gui.Text:lower() end
-                for _, desc in ipairs(gui:GetDescendants()) do
-                    if desc:IsA("TextLabel") and desc.Visible then
-                        txt = txt .. " " .. desc.Text:lower()
-                    end
+    
+    -- O jogo pode esconder o botão no Workspace (Billboards) ou no PlayerGui
+    for _, obj in ipairs(game:GetDescendants()) do
+        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
+            local txt = ""
+            if obj:IsA("TextButton") then txt = obj.Text:lower() end
+            
+            -- Checa se tem texto dentro do botão também
+            for _, desc in ipairs(obj:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Visible then
+                    txt = txt .. " " .. desc.Text:lower()
                 end
+            end
 
-                if txt:find(lowerText) then
-                    pcall(function() gui.MouseButton1Click:Fire() end)
-                    pcall(function() gui:Click() end)
-                    local pos, size = gui.AbsolutePosition, gui.AbsoluteSize
-                    if size.X > 0 and size.Y > 0 then
-                        local center = Vector2.new(pos.X + size.X/2, pos.Y + size.Y/2)
-                        VirtualUser:CaptureController()
-                        VirtualUser:Button1Down(center)
-                        VirtualUser:Button1Up(center)
-                    end
-                    return true
+            if txt:find(lowerText) then
+                local pos, size = obj.AbsolutePosition, obj.AbsoluteSize
+                if size.X > 0 and size.Y > 0 then
+                    -- Simula o Mouse Real do Roblox (Funciona em UI de jogo)
+                    local center = Vector2.new(pos.X + size.X/2, pos.Y + size.Y/2)
+                    VirtualUser:CaptureController()
+                    VirtualUser:Button1Down(center)
+                    VirtualUser:Button1Up(center)
                 end
+                pcall(function() obj.MouseButton1Click:Fire() end)
+                return true
             end
         end
     end
@@ -144,7 +146,7 @@ local function clickUIByText(textToFind)
 end
 
 --=============================================================
--- LÓGICA DA QUEST (BLINDADA)
+-- LÓGICA DA QUEST 
 --=============================================================
 local function doSolmarQuest()
     if isDoingQuest then return end
@@ -168,35 +170,35 @@ local function doSolmarQuest()
         
         if pos then
             -- 1. Teleporta
-            hrp.CFrame = pos.CFrame + Vector3.new(0, 3, 0)
-            task.wait(1) 
+            hrp.CFrame = pos.CFrame * CFrame.new(0, 0, 3) -- Fica de frente
+            task.wait(1.5) 
             
-            -- 2. Aciona Prompt
+            -- 2. Aciona Prompt Padrão
             updateStatus("Interagindo...")
             for _, prompt in ipairs(giverModel:GetDescendants()) do
                 if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
                 if prompt:IsA("ClickDetector") then fireclickdetector(prompt) end
             end
             
-            -- 3. Diálogo
-            task.wait(1.5)
-            updateStatus("Clicando 'Conversar'...")
-            clickUIByText("conversar")
-            
+            -- 3. Diálogo (Conversar)
             task.wait(1)
+            updateStatus("Clicando 'Conversar'...")
+            ultraClickByText("conversar")
+            
+            task.wait(1.5)
             updateStatus("Clicando 'Mostre-me'...")
-            clickUIByText("mostre-me")
-            clickUIByText("mostrar")
+            ultraClickByText("mostre-me")
+            ultraClickByText("mostrar")
             
             -- 4. Aceitar
             task.wait(1.5)
             updateStatus("Aceitando...")
-            clickUIByText("aceitar")
-            clickUIByText("accept")
+            ultraClickByText("aceitar")
+            ultraClickByText("accept")
             
             -- 5. Fecha UI e Trava o Farm por 3s
             task.wait(1)
-            clickUIByText("x")
+            ultraClickByText("fechar")
             
             updateStatus("Aguardando Registro...")
             task.wait(3) 
@@ -275,7 +277,7 @@ LP.Idled:Connect(function()
 end)
 
 --=============================================================
--- UI (Com Drag, Close, Open e Status)
+-- UI
 --=============================================================
 local gui = Instance.new("ScreenGui")
 gui.Name = "VoxSeas_Solmar"
@@ -383,7 +385,6 @@ makeToggle("Auto Farm (Teleport)", "AutoFarm", 3)
 makeToggle("Kill Aura (AoE)", "KillAura", 4)
 makeToggle("Anti AFK", "AntiAFK", 5)
 
--- Botão de TESTE pra forçar a quest sem esperar
 local forceBtn = Instance.new("TextButton")
 forceBtn.Size = UDim2.new(1, 0, 0, 28)
 forceBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
