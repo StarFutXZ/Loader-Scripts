@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História Completa
+-- LARP's Evenesce Auto-Farm com Quest de História Completa (Coordenada Atualizada)
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -29,7 +29,7 @@ local Settings = {
 -- Coordenadas do Fluxo da História
 local Coords = {
     House = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125),
-    NPC = CFrame.new(-323.0217590332031, -759.1370849609375, -45.231422424316406),
+    NPC = CFrame.new(-326.5045166015625, -766.5742797851562, -35.77769470214844), -- COORDENADA NOVA AQUI
     ExitDoor = CFrame.new(-320.39434814453125, -763.6283569335938, -29.28922462463379)
 }
 
@@ -364,4 +364,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Fluxo completo carregado. O monge agora resolve a porra da história inteira.")
+print("[LARP] Coordenada atualizada, porra. O monge agora vai no NPC certo.")
