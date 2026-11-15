@@ -1,8 +1,5 @@
--- LARP's Auto-Farm com Interface Linoria
-local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
-local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
-local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+-- LARP's Evenesce Auto-Farm Integration
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,142 +8,98 @@ local RunService = game:GetService("RunService")
 
 local localPlayer = Players.LocalPlayer
 
--- Configurações de Combate
-local CombatSettings = {
-    Distance = 5,
+-- ==========================================
+-- ESTADO GLOBAL DO FARM
+-- ==========================================
+local Settings = {
     AutoFarm = false,
     AutoQuest = true,
-    AutoEquip = true
-}
-
-local Window = Library:CreateWindow({
-    Title = 'LARP Hub',
-    Center = true,
-    AutoShow = true,
-    TabPadding = 8,
-    MenuFadeTime = 0.2
-})
-
-local Tabs = {
-    Main = Window:AddTab('Main'),
-    ['UI Settings'] = Window:AddTab('UI Settings')
+    AutoEquip = true,
+    Distance = 5,
+    TargetMob = "Pirate",
+    SelectedQuest = "Defeat Pirates"
 }
 
 -- ==========================================
--- TAB: MAIN
+-- INTERFACE EVENESCE
 -- ==========================================
-local MainLeft = Tabs.Main:AddLeftGroupbox('Weapon')
-local MainRight = Tabs.Main:AddRightGroupbox('Quests')
-local MainLeft2 = Tabs.Main:AddLeftGroupbox('Mobs')
-local MainRight2 = Tabs.Main:AddRightGroupbox('Equipment')
-
--- Weapon / Combat
-local weaponDropdown = MainLeft:AddDropdown('WeaponSelect', {
-    Values = { 'Combat', 'Sword', 'Gun' },
-    Default = 1,
-    Multi = false,
-    Text = 'Select Weapon',
-    Tooltip = 'Select your weapon type for combat',
-    Callback = function(Value) print('Weapon selected:', Value) end
+local Window = Library:Window({
+    Name = "LARP Hub",
+    Icon = "74643671263769"
 })
 
-MainLeft:AddSlider('CombatDistance', {
-    Text = 'Distance',
+Window:Watermark()
+
+local MainTab = Window:Tab({ Name = "Main", Icon = "crosshair" })
+local FarmSub = MainTab:SubSection({ Name = "Auto Farm", Default = true })
+
+-- Coluna Esquerda: Combate
+local CombatSec = FarmSub:Section({ Name = "Combat" })
+CombatSec:Dropdown({
+    Name = "Select Weapon",
+    Options = { "Combat", "Sword", "Gun" },
+    Default = "Combat",
+    Flag = "WeaponType",
+    Callback = function(Value) print("[LARP] Weapon:", Value) end
+})
+
+CombatSec:Slider({
+    Name = "Distance",
+    Min = 1, Max = 20,
     Default = 5,
-    Min = 1,
-    Max = 20,
-    Rounding = 0,
-    Compact = false,
-    Callback = function(Value)
-        CombatSettings.Distance = Value
-    end
+    Suffix = " studs",
+    Flag = "CombatDistance",
+    Callback = function(Value) Settings.Distance = Value end
 })
 
--- Quests
-local questDropdown = MainRight:AddDropdown('QuestSelect', {
-    Values = { 'Defeat Desert Oasis Bandits', 'Defeat Pirates', 'Defeat Flint Pirates' },
-    Default = 1,
-    Multi = false,
-    Text = 'Select Quest',
-    Tooltip = 'Select the quest to auto-accept',
-    Callback = function(Value) print('Quest selected:', Value) end
-})
-
-MainRight:AddToggle('AutoQuestToggle', {
-    Text = 'Auto Quest',
-    Default = true,
-    Tooltip = 'Automatically accepts the selected quest',
-    Callback = function(Value)
-        CombatSettings.AutoQuest = Value
-        print('Auto Quest:', Value)
-    end
-})
-
-MainRight:AddToggle('AutoLevelToggle', {
-    Text = 'Auto Level',
+CombatSec:Toggle({
+    Name = "Auto Farm",
+    Flag = "AutoFarmToggle",
     Default = false,
-    Tooltip = 'Automatically accepts level-based quests',
-    Callback = function(Value) print('Auto Level:', Value) end
+    Callback = function(Value) Settings.AutoFarm = Value end
 })
 
--- Mobs
-local mobDropdown = MainLeft2:AddDropdown('MobSelect', {
-    Values = { 'Bandit Enforcer', 'Cutlass Pirate', 'Flint Pirate' },
-    Default = 1,
-    Multi = false,
-    Text = 'Select Mob',
-    Tooltip = 'Select the target mob to hunt',
-    Callback = function(Value) print('Mob selected:', Value) end
+-- Coluna Direita: Quests
+local QuestSec = FarmSub:Section({ Name = "Quests", Side = "Right" })
+QuestSec:Dropdown({
+    Name = "Select Quest",
+    Options = { "Defeat Pirates", "Defeat Flint Pirates", "Defeat Desert Oasis Bandits" },
+    Default = "Defeat Pirates",
+    Flag = "QuestSelect",
+    Callback = function(Value) Settings.SelectedQuest = Value end
 })
 
-MainLeft2:AddToggle('AutoFarmToggle', {
-    Text = 'Auto Farm',
-    Default = false,
-    Tooltip = 'Enables the auto-farm loop',
-    Callback = function(Value)
-        CombatSettings.AutoFarm = Value
-        print('Auto Farm:', Value)
-    end
-})
-
--- Equipment
-MainRight2:AddToggle('AutoEquipToggle', {
-    Text = 'Auto Equip Best Accessories',
+QuestSec:Toggle({
+    Name = "Auto Quest",
+    Flag = "AutoQuestToggle",
     Default = true,
-    Tooltip = 'Automatically equips the best accessories',
-    Callback = function(Value)
-        CombatSettings.AutoEquip = Value
-        print('Auto Equip:', Value)
-    end
+    Callback = function(Value) Settings.AutoQuest = Value end
+})
+
+-- Coluna Esquerda: Mobs
+local MobSec = FarmSub:Section({ Name = "Mobs" })
+MobSec:Dropdown({
+    Name = "Select Mob",
+    Options = { "Pirate", "Bandit", "Marine" },
+    Default = "Pirate",
+    Flag = "MobSelect",
+    Callback = function(Value) Settings.TargetMob = Value end
+})
+
+-- Coluna Direita: Equipamento
+local EquipSec = FarmSub:Section({ Name = "Equipment", Side = "Right" })
+EquipSec:Toggle({
+    Name = "Auto Equip Best Accessories",
+    Flag = "AutoEquipToggle",
+    Default = true,
+    Callback = function(Value) Settings.AutoEquip = Value end
 })
 
 -- ==========================================
--- TAB: UI SETTINGS
--- ==========================================
-local SettingsLeft = Tabs['UI Settings']:AddLeftGroupbox('Menu')
-SettingsLeft:AddButton({
-    Text = 'Unload Script',
-    Func = function()
-        Library:Unload()
-    end,
-    DoubleClick = false,
-    Tooltip = 'Unloads the menu and stops all scripts'
-})
-
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({ 'Menu' })
-ThemeManager:SetFolder('LARPHub')
-SaveManager:SetFolder('LARPHub')
-SaveManager:BuildConfigSection(Tabs['UI Settings'])
-ThemeManager:ApplyToTab(Tabs['UI Settings'])
-
--- ==========================================
--- LÓGICA DO AUTO-FARM (Integrada)
+-- LÓGICA DO FARM
 -- ==========================================
 local function equipWeapon()
-    if not CombatSettings.AutoEquip then return end
+    if not Settings.AutoEquip then return end
     local char = localPlayer.Character
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack or not char or char:FindFirstChildOfClass("Tool") then return end
@@ -154,16 +107,10 @@ local function equipWeapon()
     for _, item in pairs(backpack:GetChildren()) do
         if item:IsA("Tool") then
             item.Parent = char
-            task.wait(0.5)
-            break
+            task.wait(0.3)
+            return
         end
     end
-end
-
-local function getTargetMobName()
-    local selected = mobDropdown.Value
-    if type(selected) == "table" then selected = selected[1] end
-    return tostring(selected)
 end
 
 local function getClosestEnemy()
@@ -173,7 +120,7 @@ local function getClosestEnemy()
     local hrp = char.HumanoidRootPart
     local closest = nil
     local dist = math.huge
-    local targetName = getTargetMobName()
+    local targetName = Settings.TargetMob
 
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj ~= char then
@@ -193,21 +140,15 @@ local function getClosestEnemy()
     return closest
 end
 
-local function executeQuestLogic()
-    if not CombatSettings.AutoQuest then return end
-    
+local function acceptQuest()
+    if not Settings.AutoQuest then return end
     local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
-    local selectedQuest = questDropdown.Value
-    if type(selectedQuest) == "table" then selectedQuest = selectedQuest[1] end
-    
     local args = {
         [1] = "AcceptGrinding",
-        [2] = tostring(selectedQuest)
+        [2] = Settings.SelectedQuest
     }
-    
     questRemote:FireServer(unpack(args))
-    print("[LARP] Missão aceita: " .. tostring(selectedQuest))
-    task.wait(1)
+    print("[LARP] Quest accepted:", Settings.SelectedQuest)
 end
 
 -- Loop Principal
@@ -222,8 +163,8 @@ task.spawn(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
-        if CombatSettings.AutoFarm then
-            -- Ativar noclip
+        if Settings.AutoFarm then
+            -- Noclip
             if not noclipConnection then
                 noclipConnection = RunService.Stepped:Connect(function()
                     if char then
@@ -234,10 +175,10 @@ task.spawn(function()
                 end)
             end
 
-            -- Auto Quest periódico (a cada 5 segundos se estiver ligado)
-            if CombatSettings.AutoQuest and (tick() - lastQuestTime > 5) then
+            -- Auto Quest periódico
+            if Settings.AutoQuest and (tick() - lastQuestTime > 5) then
                 lastQuestTime = tick()
-                -- executeQuestLogic() -- Descomente se quiser auto-aceitar periodicamente
+                acceptQuest()
             end
 
             equipWeapon()
@@ -246,9 +187,7 @@ task.spawn(function()
             if target then
                 local tHrp = target:FindFirstChild("HumanoidRootPart")
                 if tHrp then
-                    -- Teleporte para frente do inimigo baseado na distância configurada
-                    hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, CombatSettings.Distance)
-                    
+                    hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, Settings.Distance)
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
                         tool:Activate()
@@ -256,7 +195,7 @@ task.spawn(function()
                 end
             end
         else
-            -- Desligar noclip se estiver ocioso
+            -- Desligar noclip
             if noclipConnection then
                 noclipConnection:Disconnect()
                 noclipConnection = nil
@@ -268,4 +207,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Interface carregada. Boa sorte com a porra do farm.")
+print("[LARP] Evenesce UI carregada. O farm tá na tua mão.")
