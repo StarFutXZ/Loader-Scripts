@@ -1,4 +1,4 @@
--- LARP's Auto-Farm Completo: Navegação, Quest & Combate
+-- LARP's Auto-Farm: Versão Corrigida e Agressiva
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -16,9 +16,7 @@ local targetCFrame = CFrame.new(
     0.93001014, 0, -0.367537051
 )
 
-local targetNames = {["Cutlass Pirate"] = true, ["Flint Pirate"] = true}
-
--- Ativar Noclip (evita ficar preso em terreno de merda)
+-- Ativar Noclip
 local noclipConnection = RunService.Stepped:Connect(function()
     if char and char.Parent then
         for _, v in pairs(char:GetDescendants()) do
@@ -30,13 +28,13 @@ local noclipConnection = RunService.Stepped:Connect(function()
 end)
 
 -- 1. Ir até o NPC
-print("[LARP] Voando pro boneco de quest...")
+print("[LARP] Indo pro NPC...")
 local tween = TweenService:Create(hrp, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = targetCFrame})
 tween:Play()
 tween.Completed:Wait()
 
 -- 2. Aceitar a missão
-print("[LARP] Pegando a primeira missão...")
+print("[LARP] Aceitando a missão...")
 local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
 local args = {
     [1] = "AcceptGrinding",
@@ -45,21 +43,26 @@ local args = {
 questRemote:FireServer(unpack(args))
 
 -- 3. Caçar e matar
-print("[LARP] Caçando os desgraçados...")
+print("[LARP] Procurando a porra dos piratas...")
+
 local function getClosestEnemy()
     local closest = nil
     local dist = math.huge
     local myPos = hrp.Position
 
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and targetNames[obj.Name] then
-            local tHrp = obj:FindFirstChild("HumanoidRootPart")
-            local hum = obj:FindFirstChild("Humanoid")
-            if tHrp and hum and hum.Health > 0 then
-                local d = (tHrp.Position - myPos).Magnitude
-                if d < dist then
-                    dist = d
-                    closest = obj
+        if obj:IsA("Model") and obj ~= char then
+            local name = string.lower(obj.Name)
+            -- Busca qualquer modelo que tenha 'pirate' no nome
+            if string.find(name, "pirate") then
+                local tHrp = obj:FindFirstChild("HumanoidRootPart")
+                local hum = obj:FindFirstChild("Humanoid")
+                if tHrp and hum and hum.Health > 0 then
+                    local d = (tHrp.Position - myPos).Magnitude
+                    if d < dist then
+                        dist = d
+                        closest = obj
+                    end
                 end
             end
         end
@@ -67,8 +70,7 @@ local function getClosestEnemy()
     return closest
 end
 
-while task.wait() do
-    -- Para o script se o jogador morrer
+while task.wait(0.1) do
     if not char or not char.Parent then break end 
     
     local target = getClosestEnemy()
@@ -76,18 +78,18 @@ while task.wait() do
     if target then
         local tHrp = target:FindFirstChild("HumanoidRootPart")
         if tHrp then
-            local tTween = TweenService:Create(hrp, TweenInfo.new(0.4, Enum.EasingStyle.Linear), {CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)})
-            tTween:Play()
-            tTween.Completed:Wait()
+            -- Teleporte seco na cara do inimigo (sem tween pra não bugar com física)
+            hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 2)
             
+            -- Spamma o botão de ataque se tiver ferramenta
             local tool = char:FindFirstChildOfClass("Tool")
             if tool then
                 tool:Activate()
             end
         end
     else
-        print("[LARP] Área limpa. Acabou a pirataria por aqui.")
-        break
+        -- Não achou ninguém? Espera 2 segundos e tenta de novo em vez de desistir
+        task.wait(2)
     end
 end
 
