@@ -1,12 +1,14 @@
--- LARP's Auto-Farm: Step 1 - Quest NPC Navigation & Accept
+-- LARP's Auto-Farm Completo: Navegação, Quest & Combate
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
 local localPlayer = Players.LocalPlayer
+local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
 
--- Parsed exact CFrame provided
+-- Coordenadas exatas do NPC de Quest
 local targetCFrame = CFrame.new(
     -143.089233, 20.8761578, 325.018066,
     -0.367537022, 0, -0.93001014,
@@ -14,47 +16,85 @@ local targetCFrame = CFrame.new(
     0.93001014, 0, -0.367537051
 )
 
-local function navigateAndAccept()
-    local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-    local hrp = char:WaitForChild("HumanoidRootPart")
-    local humanoid = char:WaitForChild("Humanoid")
-    
-    -- Temporarily disable collision to prevent getting stuck on terrain during tween
-    local noclipConnection
-    noclipConnection = RunService.Stepped:Connect(function()
-        if char and hrp then
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") and v.CanCollide then
-                    v.CanCollide = false
+local targetNames = {["Cutlass Pirate"] = true, ["Flint Pirate"] = true}
+
+-- Ativar Noclip (evita ficar preso em terreno de merda)
+local noclipConnection = RunService.Stepped:Connect(function()
+    if char and char.Parent then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then 
+                v.CanCollide = false 
+            end
+        end
+    end
+end)
+
+-- 1. Ir até o NPC
+print("[LARP] Voando pro boneco de quest...")
+local tween = TweenService:Create(hrp, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = targetCFrame})
+tween:Play()
+tween.Completed:Wait()
+
+-- 2. Aceitar a missão
+print("[LARP] Pegando a primeira missão...")
+local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
+local args = {
+    [1] = "AcceptGrinding",
+    [2] = "Defeat Pirates"
+}
+questRemote:FireServer(unpack(args))
+
+-- 3. Caçar e matar
+print("[LARP] Caçando os desgraçados...")
+local function getClosestEnemy()
+    local closest = nil
+    local dist = math.huge
+    local myPos = hrp.Position
+
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and targetNames[obj.Name] then
+            local tHrp = obj:FindFirstChild("HumanoidRootPart")
+            local hum = obj:FindFirstChild("Humanoid")
+            if tHrp and hum and hum.Health > 0 then
+                local d = (tHrp.Position - myPos).Magnitude
+                if d < dist then
+                    dist = d
+                    closest = obj
                 end
             end
         end
-    end)
-
-    -- Smooth precise tween to the quest NPC
-    local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-    
-    tween:Play()
-    tween.Completed:Wait()
-    
-    -- Cleanup noclip immediately after arriving
-    if noclipConnection then 
-        noclipConnection:Disconnect() 
     end
+    return closest
+end
+
+while task.wait() do
+    -- Para o script se o jogador morrer
+    if not char or not char.Parent then break end 
+    
+    local target = getClosestEnemy()
+    
+    if target then
+        local tHrp = target:FindFirstChild("HumanoidRootPart")
+        if tHrp then
+            local tTween = TweenService:Create(hrp, TweenInfo.new(0.4, Enum.EasingStyle.Linear), {CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)})
+            tTween:Play()
+            tTween.Completed:Wait()
+            
+            local tool = char:FindFirstChildOfClass("Tool")
+            if tool then
+                tool:Activate()
+            end
+        end
+    else
+        print("[LARP] Área limpa. Acabou a pirataria por aqui.")
+        break
+    end
+end
+
+-- Limpeza
+noclipConnection:Disconnect()
+if char and char.Parent then
     for _, v in pairs(char:GetDescendants()) do
         if v:IsA("BasePart") then v.CanCollide = true end
     end
-
-    -- Fire the server remote to accept the quest
-    local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
-    local args = {
-        [1] = "AcceptGrinding",
-        [2] = "Defeat Pirates"
-    }
-    
-    questRemote:FireServer(unpack(args))
-    print("[LARP] Quest accepted. Now go kill some fucks.")
 end
-
-navigateAndAccept()
