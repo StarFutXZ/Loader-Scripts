@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História e Noclip Absoluto
+-- LARP's Evenesce Auto-Farm (Fixed & Unbroken)
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -9,7 +9,7 @@ local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
 
 -- ==========================================
--- ESTADO GLOBAL DO FARM
+-- ESTADO GLOBAL
 -- ==========================================
 local Settings = {
     AutoFarm = false,
@@ -22,9 +22,8 @@ local Settings = {
     SelectedStory = "Story 1",
     FlightSpeed = 250,
     BaseSpeed = 250,
-    StoryDoorOpened = false,
-    StoryState = "IDLE",
-    Noclip = true -- LIGADO POR PADRÃO
+    Noclip = true,
+    ExecutingStory = false
 }
 
 local Coords = {
@@ -42,12 +41,12 @@ local Window = Library:Window({
 })
 
 local MainTab = Window:Tab({ Name = "Main", Icon = "crosshair" })
-local PlayerTab = Window:Tab({ Name = "Player", Icon = "user" }) -- A PORRA DA ABA PLAYER AQUI
+local PlayerTab = Window:Tab({ Name = "Player", Icon = "user" })
 
 local FarmSub = MainTab:SubSection({ Name = "Auto Farm", Default = true })
-local PlayerSub = PlayerTab:SubSection({ Name = "Local Player", Default = true }) -- SEÇÃO DO PLAYER
+local PlayerSub = PlayerTab:SubSection({ Name = "Local Player", Default = true })
 
--- Coluna Esquerda: Combate
+-- Aba Main
 local CombatSec = FarmSub:Section({ Name = "Combat" })
 CombatSec:Dropdown({
     Name = "Select Weapon",
@@ -84,7 +83,6 @@ CombatSec:Toggle({
     Callback = function(Value) Settings.AutoFarm = Value end
 })
 
--- Coluna Direita: Quests
 local QuestSec = FarmSub:Section({ Name = "Quests", Side = "Right" })
 QuestSec:Dropdown({
     Name = "Select Grinding Quest",
@@ -103,19 +101,14 @@ QuestSec:Toggle({
 
 local StoryToggle
 StoryToggle = QuestSec:Toggle({
-    Name = "Auto Story Quest (1st Island)",
+    Name = "Auto Story Quest",
     Flag = "AutoStoryToggle",
     Default = false,
     Callback = function(Value) 
         Settings.AutoStory = Value 
-        if Value then 
-            Settings.StoryDoorOpened = false 
-            Settings.StoryState = "IDLE" 
-        end
     end
 })
 
--- Coluna Esquerda: Mobs
 local MobSec = FarmSub:Section({ Name = "Mobs" })
 MobSec:Dropdown({
     Name = "Select Mob",
@@ -125,20 +118,18 @@ MobSec:Dropdown({
     Callback = function(Value) Settings.TargetMob = Value end
 })
 
--- Coluna Direita: Equipamento
 local EquipSec = FarmSub:Section({ Name = "Equipment", Side = "Right" })
 EquipSec:Toggle({
-    Name = "Auto Equip Best Accessories",
+    Name = "Auto Equip Accessories",
     Flag = "AutoEquipToggle",
     Default = true,
     Callback = function(Value) Settings.AutoEquip = Value end
 })
 
--- ==========================================
--- SEÇÃO PLAYER (NOCLIP)
--- ==========================================
-PlayerSub:Toggle({
-    Name = "Noclip (Foda-se as paredes)",
+-- Aba Player (CORRIGIDA COM SECTION)
+local PlayerSec = PlayerSub:Section({ Name = "Movement" })
+PlayerSec:Toggle({
+    Name = "Noclip (Atravessa paredes)",
     Flag = "NoclipToggle",
     Default = true, 
     Callback = function(Value) 
@@ -147,7 +138,7 @@ PlayerSub:Toggle({
 })
 
 -- ==========================================
--- LÓGICA DO FARM E HISTÓRIA
+-- FUNÇÕES LÓGICAS
 -- ==========================================
 local function equipWeapon()
     if not Settings.AutoEquip then return end
@@ -167,10 +158,8 @@ end
 local function getClosestEnemy()
     local char = localPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    
     local hrp = char.HumanoidRootPart
-    local closest = nil
-    local dist = math.huge
+    local closest, dist = nil, math.huge
     local targetName = Settings.TargetMob
 
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -180,10 +169,7 @@ local function getClosestEnemy()
                 local hum = obj:FindFirstChild("Humanoid")
                 if tHrp and hum and hum.Health > 0 then
                     local d = (tHrp.Position - hrp.Position).Magnitude
-                    if d < dist then
-                        dist = d
-                        closest = obj
-                    end
+                    if d < dist then dist, closest = d, obj end
                 end
             end
         end
@@ -191,69 +177,43 @@ local function getClosestEnemy()
     return closest
 end
 
-local function acceptQuest(isStory)
+local function acceptQuest()
     local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
-    
-    if isStory then
-        local args = { [1] = "AcceptStory", [2] = Settings.SelectedStory }
-        questRemote:FireServer(unpack(args))
-    else
-        local args = { [1] = "AcceptGrinding", [2] = Settings.SelectedQuest }
-        questRemote:FireServer(unpack(args))
-    end
+    questRemote:FireServer(unpack({ [1] = "AcceptGrinding", [2] = Settings.SelectedQuest }))
 end
 
 local function enterHouse()
-    local args = { [1] = "EnterArea", [2] = "ElderHouseEnter" }
-    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
-    print("[LARP] Entrando na porra da casa do velho...")
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack({ [1] = "EnterArea", [2] = "ElderHouseEnter" }))
 end
 
 local function talkToNPC()
-    local args = { [1] = "Talk_VillageChief" }
-    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Elysium_Converse"):FireServer(unpack(args))
-    print("[LARP] Falando com a porra do Chefe da Vila...")
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Elysium_Converse"):FireServer(unpack({ [1] = "Talk_VillageChief" }))
 end
 
 local function leaveHouse()
-    local args = { [1] = "EnterArea", [2] = "ElderHouseLeave" }
-    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
-    print("[LARP] Vazando da porra da casa...")
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack({ [1] = "EnterArea", [2] = "ElderHouseLeave" }))
 end
 
 -- ==========================================
--- NOCLIP ABSOLUTO (RODA SEPARADO E FORÇA O CARALHO)
+-- NOCLIP BLINDADO
 -- ==========================================
 local noclipConnection = nil
-
 local function applyNoclip()
     local char = localPlayer.Character
     if char then
         for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then
-                v.CanCollide = false
-            end
+            if v:IsA("BasePart") then v.CanCollide = false end
         end
     end
 end
 
--- Conecta logo de cara pra garantir que a porra tá ativa desde o início
-if Settings.Noclip then
-    noclipConnection = RunService.Stepped:Connect(function()
-        if Settings.Noclip then applyNoclip() end
-    end)
-end
-
--- Monitora o Toggle da porra do Noclip
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait(0.2) do
         if Settings.Noclip then
             if not noclipConnection then
-                noclipConnection = RunService.Stepped:Connect(function()
-                    applyNoclip()
-                end)
+                noclipConnection = RunService.Stepped:Connect(applyNoclip)
             end
-            applyNoclip() -- Reforço pra caso o boneco tome respawn ou troque de parte
+            applyNoclip()
         else
             if noclipConnection then
                 noclipConnection:Disconnect()
@@ -269,95 +229,67 @@ task.spawn(function()
     end
 end)
 
--- Loop Principal (Farm e História)
+-- ==========================================
+-- LOOP PRINCIPAL
+-- ==========================================
 task.spawn(function()
     local lastQuestTime = 0
-    local stuckCounter = 0
-
+    
     while task.wait() do
         local char = localPlayer.Character
         if not char or not char.Parent then continue end
-
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
         -- Lógica da História
-        if Settings.AutoStory then
-            if Settings.StoryState == "IDLE" then
-                Settings.StoryState = "FLY_HOUSE"
-                
-            elseif Settings.StoryState == "FLY_HOUSE" then
-                local dist = (Coords.House.Position - hrp.Position).Magnitude
-                if dist > 5 then
-                    local dir = (Coords.House.Position - hrp.Position).Unit
-                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
-                else
-                    hrp.CFrame = Coords.House
+        if Settings.AutoStory and not Settings.ExecutingStory then
+            Settings.ExecutingStory = true
+            
+            task.spawn(function()
+                local function flyTo(target)
+                    if not Settings.AutoStory then return false end
+                    local dist = (target.Position - hrp.Position).Magnitude
+                    local time = dist / Settings.FlightSpeed
+                    if time <= 0 then time = 0.01 end
+                    
+                    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = target})
+                    tween:Play()
+                    tween.Completed:Wait()
+                    
+                    hrp.CFrame = target
                     hrp.AssemblyLinearVelocity = Vector3.zero
-                    Settings.StoryState = "ENTER_HOUSE"
+                    return true
                 end
 
-            elseif Settings.StoryState == "ENTER_HOUSE" then
-                task.spawn(function()
+                if flyTo(Coords.House) then
                     task.wait(0.5)
                     enterHouse()
-                    task.wait(1.5) 
-                    Settings.StoryState = "FLY_NPC"
-                end)
-
-            elseif Settings.StoryState == "FLY_NPC" then
-                local dist = (Coords.NPC.Position - hrp.Position).Magnitude
-                if dist > 5 then
-                    local dir = (Coords.NPC.Position - hrp.Position).Unit
-                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
-                else
-                    hrp.CFrame = Coords.NPC
-                    hrp.AssemblyLinearVelocity = Vector3.zero
-                    Settings.StoryState = "TALK_NPC"
+                    task.wait(2)
+                    if flyTo(Coords.NPC) then
+                        task.wait(0.5)
+                        talkToNPC()
+                        task.wait(2)
+                        if flyTo(Coords.ExitDoor) then
+                            task.wait(0.5)
+                            leaveHouse()
+                            task.wait(2)
+                        end
+                    end
                 end
 
-            elseif Settings.StoryState == "TALK_NPC" then
-                task.spawn(function()
-                    task.wait(0.5)
-                    talkToNPC()
-                    task.wait(1.5)
-                    Settings.StoryState = "FLY_EXIT"
-                end)
-
-            elseif Settings.StoryState == "FLY_EXIT" then
-                local dist = (Coords.ExitDoor.Position - hrp.Position).Magnitude
-                if dist > 5 then
-                    local dir = (Coords.ExitDoor.Position - hrp.Position).Unit
-                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
-                else
-                    hrp.CFrame = Coords.ExitDoor
-                    hrp.AssemblyLinearVelocity = Vector3.zero
-                    Settings.StoryState = "LEAVE_HOUSE"
-                end
-
-            elseif Settings.StoryState == "LEAVE_HOUSE" then
-                task.spawn(function()
-                    task.wait(0.5)
-                    leaveHouse()
-                    task.wait(1.5)
-                    Settings.StoryState = "DONE"
-                end)
-
-            elseif Settings.StoryState == "DONE" then
-                Settings.StoryState = "IDLE"
                 Settings.AutoStory = false
-                Settings.StoryDoorOpened = true
+                Settings.ExecutingStory = false
                 if StoryToggle and StoryToggle.SetValue then
                     StoryToggle:SetValue(false)
                 end
-            end
+            end)
         end
 
-        -- Lógica de Auto Farm
-        if Settings.AutoFarm and not Settings.AutoStory then
+        -- Lógica do Auto Farm
+        if Settings.AutoFarm and not Settings.ExecutingStory then
             if (tick() - lastQuestTime > 5) then
                 lastQuestTime = tick()
-                if Settings.AutoQuest then acceptQuest(false) end
+                if Settings.AutoQuest then acceptQuest() end
             end
 
             equipWeapon()
@@ -368,31 +300,13 @@ task.spawn(function()
                 if tHrp then
                     local distance = (tHrp.Position - hrp.Position).Magnitude
                     local destination = tHrp.CFrame * CFrame.new(0, 0, Settings.Distance)
-                    
                     local travelTime = distance / Settings.FlightSpeed
                     if travelTime <= 0 then travelTime = 0.01 end
                     
-                    local startPos = hrp.Position
                     local flyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = destination})
-                    
                     flyTween:Play()
                     flyTween.Completed:Wait()
                     
-                    local endPos = hrp.Position
-                    local expectedDist = (destination.Position - startPos).Magnitude
-                    local actualDist = (endPos - startPos).Magnitude
-                    
-                    if actualDist < (expectedDist * 0.5) and expectedDist > 15 then
-                        stuckCounter = stuckCounter + 1
-                        Settings.FlightSpeed = math.max(50, Settings.FlightSpeed * 0.7)
-                        if stuckCounter >= 3 then stuckCounter = 0 end
-                    else
-                        stuckCounter = 0
-                        if Settings.FlightSpeed < Settings.BaseSpeed then
-                            Settings.FlightSpeed = math.min(Settings.BaseSpeed, Settings.FlightSpeed + 5)
-                        end
-                    end
-
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then tool:Activate() end
                 end
@@ -401,4 +315,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Aba Player ativada. O noclip tá fodendo as paredes.")
+print("[LARP] Script desfudido e consertado. Vai lá.")
