@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História (Pára, Crava e Entra)
+-- LARP's Evenesce Auto-Farm com Quest de História Completa
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -23,11 +23,15 @@ local Settings = {
     FlightSpeed = 250,
     BaseSpeed = 250,
     StoryDoorOpened = false,
-    StoryState = "IDLE" -- IDLE, FLYING, STOPPING, ENTERING
+    StoryState = "IDLE" -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, DONE
 }
 
--- Coordenadas da Quest de História
-local StoryHouseCFrame = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125)
+-- Coordenadas do Fluxo da História
+local Coords = {
+    House = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125),
+    NPC = CFrame.new(-323.0217590332031, -759.1370849609375, -45.231422424316406),
+    ExitDoor = CFrame.new(-320.39434814453125, -763.6283569335938, -29.28922462463379)
+}
 
 -- ==========================================
 -- INTERFACE EVENESCE
@@ -103,7 +107,7 @@ StoryToggle = QuestSec:Toggle({
         Settings.AutoStory = Value 
         if Value then 
             Settings.StoryDoorOpened = false 
-            Settings.StoryState = "IDLE"
+            Settings.StoryState = "IDLE" 
         end
     end
 })
@@ -186,14 +190,23 @@ local function acceptQuest(isStory)
     end
 end
 
--- A PORRA DO TEU CÓDIGO EXATO AQUI
-local function enterStoryHouse()
-    local args = {
-        [1] = "EnterArea",
-        [2] = "ElderHouseEnter"
-    }
+-- Ações da História
+local function enterHouse()
+    local args = { [1] = "EnterArea", [2] = "ElderHouseEnter" }
     game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
-    print("[LARP] Invadindo a porra da casa do velho...")
+    print("[LARP] Entrando na porra da casa do velho...")
+end
+
+local function talkToNPC()
+    local args = { [1] = "Talk_VillageChief" }
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Elysium_Converse"):FireServer(unpack(args))
+    print("[LARP] Falando com a porra do Chefe da Vila...")
+end
+
+local function leaveHouse()
+    local args = { [1] = "EnterArea", [2] = "ElderHouseLeave" }
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
+    print("[LARP] Vazando da porra da casa...")
 end
 
 -- Loop Principal
@@ -201,7 +214,6 @@ task.spawn(function()
     local noclipConnection
     local lastQuestTime = 0
     local stuckCounter = 0
-    local storyFlyTween = nil
 
     while task.wait() do
         local char = localPlayer.Character
@@ -228,54 +240,77 @@ task.spawn(function()
         end
 
         -- ==========================================
-        -- LÓGICA DA QUEST DE HISTÓRIA (MÁQUINA DE ESTADOS)
+        -- LÓGICA DA QUEST DE HISTÓRIA (MÁQUINA DE ESTADOS COMPLETA)
         -- ==========================================
-        if Settings.AutoStory and not Settings.StoryDoorOpened then
-            local distance = (StoryHouseCFrame.Position - hrp.Position).Magnitude
-            
-            -- Estado 1: Voando pra porra da casa
-            if Settings.StoryState == "IDLE" and distance > 5 then
-                Settings.StoryState = "FLYING"
-                local travelTime = distance / Settings.FlightSpeed
-                if travelTime <= 0 then travelTime = 0.01 end
+        if Settings.AutoStory then
+            if Settings.StoryState == "IDLE" then
+                Settings.StoryState = "FLY_HOUSE"
                 
-                storyFlyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = StoryHouseCFrame})
-                storyFlyTween:Play()
-            end
-
-            -- Estado 2: Chegou perto, para a porra do boneco
-            if distance <= 5 and Settings.StoryState == "FLYING" then
-                Settings.StoryState = "STOPPING"
-                
-                if storyFlyTween then
-                    storyFlyTween:Cancel()
-                    storyFlyTween = nil
+            elseif Settings.StoryState == "FLY_HOUSE" then
+                local dist = (Coords.House.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.House.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.House
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "ENTER_HOUSE"
                 end
-                
-                -- Crava no chão e zera a velocidade
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.AssemblyAngularVelocity = Vector3.zero
-                hrp.CFrame = StoryHouseCFrame
-                
-                -- Estado 3: Espera o servidor registrar que ele parou e ENTRA
+
+            elseif Settings.StoryState == "ENTER_HOUSE" then
                 task.spawn(function()
-                    task.wait(0.5) -- Meio segundo de segurança
-                    if Settings.StoryState == "STOPPING" then
-                        Settings.StoryState = "ENTERING"
-                        enterStoryHouse()
-                        
-                        Settings.StoryDoorOpened = true
-                        Settings.AutoStory = false 
-                        if StoryToggle and StoryToggle.SetValue then
-                            StoryToggle:SetValue(false)
-                        end
-                    end
+                    task.wait(0.5)
+                    enterHouse()
+                    task.wait(1.5) -- Espera carregar o interior
+                    Settings.StoryState = "FLY_NPC"
                 end)
+
+            elseif Settings.StoryState == "FLY_NPC" then
+                local dist = (Coords.NPC.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.NPC.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.NPC
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "TALK_NPC"
+                end
+
+            elseif Settings.StoryState == "TALK_NPC" then
+                task.spawn(function()
+                    task.wait(0.5)
+                    talkToNPC()
+                    task.wait(1.5) -- Espera o diálogo
+                    Settings.StoryState = "FLY_EXIT"
+                end)
+
+            elseif Settings.StoryState == "FLY_EXIT" then
+                local dist = (Coords.ExitDoor.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.ExitDoor.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.ExitDoor
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "LEAVE_HOUSE"
+                end
+
+            elseif Settings.StoryState == "LEAVE_HOUSE" then
+                task.spawn(function()
+                    task.wait(0.5)
+                    leaveHouse()
+                    task.wait(1.5)
+                    Settings.StoryState = "DONE"
+                end)
+
+            elseif Settings.StoryState == "DONE" then
+                Settings.StoryState = "IDLE"
+                Settings.AutoStory = false
+                Settings.StoryDoorOpened = true
+                if StoryToggle and StoryToggle.SetValue then
+                    StoryToggle:SetValue(false)
+                end
             end
-        elseif not Settings.AutoStory and Settings.StoryState ~= "IDLE" then
-            -- Reset de segurança se o usuário desligar no meio do caminho
-            if storyFlyTween then storyFlyTween:Cancel() end
-            Settings.StoryState = "IDLE"
         end
 
         -- ==========================================
@@ -313,11 +348,7 @@ task.spawn(function()
                     if actualDist < (expectedDist * 0.5) and expectedDist > 15 then
                         stuckCounter = stuckCounter + 1
                         Settings.FlightSpeed = math.max(50, Settings.FlightSpeed * 0.7)
-                        
-                        if stuckCounter >= 3 then
-                            print("[LARP] Anti-cheat tá puxando de volta. Velocidade reduzida:", math.floor(Settings.FlightSpeed))
-                            stuckCounter = 0
-                        end
+                        if stuckCounter >= 3 then stuckCounter = 0 end
                     else
                         stuckCounter = 0
                         if Settings.FlightSpeed < Settings.BaseSpeed then
@@ -326,13 +357,11 @@ task.spawn(function()
                     end
 
                     local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then
-                        tool:Activate()
-                    end
+                    if tool then tool:Activate() end
                 end
             end
         end
     end
 end)
 
-print("[LARP] Máquina de estados ativada. O boneco agora para, respira e invade a porra da casa.")
+print("[LARP] Fluxo completo carregado. O monge agora resolve a porra da história inteira.")
