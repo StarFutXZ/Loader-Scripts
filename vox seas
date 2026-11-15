@@ -1,102 +1,312 @@
--- LARP's Auto-Farm: Versão Corrigida e Agressiva
+--[[
+    ZOLAR HUB - BASE VISUAL
+    Layout inspirado na referência enviada.
+
+    Inclui apenas:
+      - Janela principal
+      - Barra lateral com páginas
+      - Área de conteúdo em duas colunas
+      - Secções vazias com título e descrição
+      - Janela arrastável
+      - Botão para fechar
+
+    Não inclui automação de jogo, combate, teleporte, noclip,
+    remotes, toggles, sliders, dropdowns ou sistema de configurações.
+]]
+
+local Library = {}
+Library.__index = Library
+
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local localPlayer = Players.LocalPlayer
-local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
-local hrp = char:WaitForChild("HumanoidRootPart")
-
--- Coordenadas exatas do NPC de Quest
-local targetCFrame = CFrame.new(
-    -143.089233, 20.8761578, 325.018066,
-    -0.367537022, 0, -0.93001014,
-    0, 1, 0,
-    0.93001014, 0, -0.367537051
-)
-
--- Ativar Noclip
-local noclipConnection = RunService.Stepped:Connect(function()
-    if char and char.Parent then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then 
-                v.CanCollide = false 
-            end
-        end
-    end
-end)
-
--- 1. Ir até o NPC
-print("[LARP] Indo pro NPC...")
-local tween = TweenService:Create(hrp, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {CFrame = targetCFrame})
-tween:Play()
-tween.Completed:Wait()
-
--- 2. Aceitar a missão
-print("[LARP] Aceitando a missão...")
-local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
-local args = {
-    [1] = "AcceptGrinding",
-    [2] = "Defeat Pirates"
+local Theme = {
+    Background = Color3.fromRGB(12, 13, 16),
+    Sidebar = Color3.fromRGB(15, 16, 19),
+    Panel = Color3.fromRGB(18, 19, 23),
+    Button = Color3.fromRGB(25, 26, 31),
+    Selected = Color3.fromRGB(39, 41, 49),
+    Border = Color3.fromRGB(49, 51, 59),
+    Text = Color3.fromRGB(235, 236, 241),
+    Muted = Color3.fromRGB(145, 148, 158),
+    Accent = Color3.fromRGB(178, 169, 255)
 }
-questRemote:FireServer(unpack(args))
 
--- 3. Caçar e matar
-print("[LARP] Procurando a porra dos piratas...")
+local function create(className, props, parent)
+    local object = Instance.new(className)
+    for key, value in pairs(props or {}) do
+        object[key] = value
+    end
+    object.Parent = parent
+    return object
+end
 
-local function getClosestEnemy()
-    local closest = nil
-    local dist = math.huge
-    local myPos = hrp.Position
+local function corner(parent, radius)
+    return create("UICorner", {
+        CornerRadius = UDim.new(0, radius or 6)
+    }, parent)
+end
 
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= char then
-            local name = string.lower(obj.Name)
-            -- Busca qualquer modelo que tenha 'pirate' no nome
-            if string.find(name, "pirate") then
-                local tHrp = obj:FindFirstChild("HumanoidRootPart")
-                local hum = obj:FindFirstChild("Humanoid")
-                if tHrp and hum and hum.Health > 0 then
-                    local d = (tHrp.Position - myPos).Magnitude
-                    if d < dist then
-                        dist = d
-                        closest = obj
-                    end
-                end
+local function stroke(parent, color, transparency)
+    return create("UIStroke", {
+        Color = color or Theme.Border,
+        Transparency = transparency or 0.25,
+        Thickness = 1
+    }, parent)
+end
+
+function Library:CreateWindow(title)
+    local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+    local gui = create("ScreenGui", {
+        Name = "ZolarHub",
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    }, playerGui)
+
+    local main = create("Frame", {
+        Name = "Main",
+        Size = UDim2.fromOffset(720, 460),
+        Position = UDim2.new(0.5, -360, 0.5, -230),
+        BackgroundColor3 = Theme.Background,
+        BackgroundTransparency = 0.06,
+        BorderSizePixel = 0
+    }, gui)
+    corner(main, 9)
+    stroke(main)
+
+    local topbar = create("Frame", {
+        Name = "Topbar",
+        Size = UDim2.new(1, 0, 0, 43),
+        BackgroundColor3 = Theme.Background,
+        BackgroundTransparency = 0.02,
+        BorderSizePixel = 0
+    }, main)
+    corner(topbar, 9)
+
+    create("TextLabel", {
+        Name = "Title",
+        Position = UDim2.fromOffset(17, 0),
+        Size = UDim2.new(1, -65, 1, 0),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.GothamSemibold,
+        Text = title or "Zolar Hub",
+        TextColor3 = Theme.Text,
+        TextSize = 14,
+        TextXAlignment = Enum.TextXAlignment.Left
+    }, topbar)
+
+    local close = create("TextButton", {
+        Name = "Close",
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, -13, 0.5, 0),
+        Size = UDim2.fromOffset(25, 25),
+        BackgroundTransparency = 1,
+        Font = Enum.Font.Gotham,
+        Text = "×",
+        TextColor3 = Theme.Muted,
+        TextSize = 22,
+        AutoButtonColor = false
+    }, topbar)
+
+    local sidebar = create("Frame", {
+        Name = "Sidebar",
+        Position = UDim2.fromOffset(0, 43),
+        Size = UDim2.new(0, 145, 1, -43),
+        BackgroundColor3 = Theme.Sidebar,
+        BorderSizePixel = 0
+    }, main)
+
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, 14),
+        PaddingLeft = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10)
+    }, sidebar)
+
+    create("UIListLayout", {
+        Padding = UDim.new(0, 7),
+        SortOrder = Enum.SortOrder.LayoutOrder
+    }, sidebar)
+
+    local content = create("Frame", {
+        Name = "Content",
+        Position = UDim2.fromOffset(145, 43),
+        Size = UDim2.new(1, -145, 1, -43),
+        BackgroundColor3 = Theme.Panel,
+        BorderSizePixel = 0
+    }, main)
+
+    local window = {
+        Gui = gui,
+        Main = main,
+        Sidebar = sidebar,
+        Content = content,
+        Tabs = {},
+        SelectedTab = nil
+    }
+
+    -- Arrastar pela barra superior.
+    local dragging, dragStart, startPosition = false, nil, nil
+
+    topbar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPosition = main.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(
+            startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+        )
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    close.Activated:Connect(function()
+        gui:Destroy()
+    end)
+
+    function window:AddTab(name)
+        local page = create("ScrollingFrame", {
+            Name = tostring(name) .. "Page",
+            Position = UDim2.fromOffset(0, 0),
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ScrollBarThickness = 3,
+            ScrollBarImageColor3 = Theme.Accent,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Visible = false
+        }, content)
+
+        create("UIPadding", {
+            PaddingTop = UDim.new(0, 17),
+            PaddingLeft = UDim.new(0, 17),
+            PaddingRight = UDim.new(0, 17),
+            PaddingBottom = UDim.new(0, 16)
+        }, page)
+
+        local grid = create("UIGridLayout", {
+            CellSize = UDim2.new(0.5, -7, 0, 112),
+            CellPadding = UDim2.fromOffset(12, 12),
+            SortOrder = Enum.SortOrder.LayoutOrder
+        }, page)
+
+        local button = create("TextButton", {
+            Name = tostring(name) .. "Button",
+            Size = UDim2.new(1, 0, 0, 34),
+            BackgroundColor3 = Theme.Button,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Font = Enum.Font.GothamMedium,
+            Text = tostring(name),
+            TextColor3 = Theme.Muted,
+            TextSize = 12
+        }, sidebar)
+        corner(button, 5)
+
+        local tab = {
+            Name = tostring(name),
+            Button = button,
+            Page = page,
+            Grid = grid
+        }
+
+        button.Activated:Connect(function()
+            window:SelectTab(tab.Name)
+        end)
+
+        function tab:AddSection(sectionTitle, description)
+            local section = create("Frame", {
+                Name = tostring(sectionTitle),
+                BackgroundColor3 = Theme.Button,
+                BorderSizePixel = 0
+            }, page)
+            corner(section, 6)
+            stroke(section, Theme.Border, 0.55)
+
+            create("TextLabel", {
+                Name = "SectionTitle",
+                Position = UDim2.fromOffset(12, 11),
+                Size = UDim2.new(1, -24, 0, 19),
+                BackgroundTransparency = 1,
+                Font = Enum.Font.GothamSemibold,
+                Text = tostring(sectionTitle),
+                TextColor3 = Theme.Text,
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left
+            }, section)
+
+            create("TextLabel", {
+                Name = "Description",
+                Position = UDim2.fromOffset(12, 33),
+                Size = UDim2.new(1, -24, 0, 30),
+                BackgroundTransparency = 1,
+                Font = Enum.Font.Gotham,
+                Text = description or "",
+                TextColor3 = Theme.Muted,
+                TextSize = 10,
+                TextWrapped = true,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Top
+            }, section)
+
+            return section
+        end
+
+        table.insert(window.Tabs, tab)
+
+        if not window.SelectedTab then
+            window:SelectTab(tab.Name)
+        end
+
+        return tab
+    end
+
+    function window:SelectTab(name)
+        for _, tab in ipairs(self.Tabs) do
+            local selected = tab.Name == name
+            tab.Page.Visible = selected
+            tab.Button.BackgroundColor3 = selected and Theme.Selected or Theme.Button
+            tab.Button.TextColor3 = selected and Theme.Text or Theme.Muted
+            if selected then
+                self.SelectedTab = tab
             end
         end
     end
-    return closest
+
+    function window:Destroy()
+        if gui then gui:Destroy() end
+    end
+
+    return window
 end
 
-while task.wait(0.1) do
-    if not char or not char.Parent then break end 
-    
-    local target = getClosestEnemy()
-    
-    if target then
-        local tHrp = target:FindFirstChild("HumanoidRootPart")
-        if tHrp then
-            -- Teleporte seco na cara do inimigo (sem tween pra não bugar com física)
-            hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 2)
-            
-            -- Spamma o botão de ataque se tiver ferramenta
-            local tool = char:FindFirstChildOfClass("Tool")
-            if tool then
-                tool:Activate()
-            end
-        end
-    else
-        -- Não achou ninguém? Espera 2 segundos e tenta de novo em vez de desistir
-        task.wait(2)
-    end
-end
+return Library
 
--- Limpeza
-noclipConnection:Disconnect()
-if char and char.Parent then
-    for _, v in pairs(char:GetDescendants()) do
-        if v:IsA("BasePart") then v.CanCollide = true end
-    end
-end
+-- EXEMPLO DE ESTRUTURA:
+-- local Window = Library:CreateWindow("Vox Seas")
+-- local Main = Window:AddTab("Main")
+-- Main:AddSection("Weapon", "Seleciona e organiza as opções de arma.")
+-- Main:AddSection("Quests", "Área reservada para opções de missões.")
+-- Main:AddSection("Mobs", "Área reservada para opções de inimigos.")
+-- Main:AddSection("Level", "Área reservada para opções de nível.")
+-- Main:AddSection("Haki", "Área reservada para opções de Haki.")
+-- Main:AddSection("Equipment", "Área reservada para equipamento.")
