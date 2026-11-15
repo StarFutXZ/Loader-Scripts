@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História e Invasão
+-- LARP's Evenesce Auto-Farm com Quest de História (Pára, Crava e Entra)
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -22,7 +22,8 @@ local Settings = {
     SelectedStory = "Story 1",
     FlightSpeed = 250,
     BaseSpeed = 250,
-    StoryDoorOpened = false -- Controle pra não spammar a porra do remote
+    StoryDoorOpened = false,
+    StoryState = "IDLE" -- IDLE, FLYING, STOPPING, ENTERING
 }
 
 -- Coordenadas da Quest de História
@@ -93,13 +94,17 @@ QuestSec:Toggle({
     Callback = function(Value) Settings.AutoQuest = Value end
 })
 
-QuestSec:Toggle({
+local StoryToggle
+StoryToggle = QuestSec:Toggle({
     Name = "Auto Story Quest (1st Island)",
     Flag = "AutoStoryToggle",
     Default = false,
     Callback = function(Value) 
         Settings.AutoStory = Value 
-        if Value then Settings.StoryDoorOpened = false end
+        if Value then 
+            Settings.StoryDoorOpened = false 
+            Settings.StoryState = "IDLE"
+        end
     end
 })
 
@@ -181,13 +186,13 @@ local function acceptQuest(isStory)
     end
 end
 
+-- A PORRA DO TEU CÓDIGO EXATO AQUI
 local function enterStoryHouse()
-    local privateAreas = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas")
     local args = {
         [1] = "EnterArea",
-        [2] = "ElderHouseLeave"
+        [2] = "ElderHouseEnter"
     }
-    privateAreas:FireServer(unpack(args))
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
     print("[LARP] Invadindo a porra da casa do velho...")
 end
 
@@ -196,15 +201,16 @@ task.spawn(function()
     local noclipConnection
     local lastQuestTime = 0
     local stuckCounter = 0
+    local storyFlyTween = nil
 
-    while task.wait(0.1) do
+    while task.wait() do
         local char = localPlayer.Character
         if not char or not char.Parent then continue end
 
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
-        -- Noclip sempre que tiver alguma ação ativa
+        -- Noclip
         if (Settings.AutoFarm or Settings.AutoStory) and not noclipConnection then
             noclipConnection = RunService.Stepped:Connect(function()
                 if char then
@@ -222,31 +228,54 @@ task.spawn(function()
         end
 
         -- ==========================================
-        -- LÓGICA DA QUEST DE HISTÓRIA (PRIORIDADE)
+        -- LÓGICA DA QUEST DE HISTÓRIA (MÁQUINA DE ESTADOS)
         -- ==========================================
         if Settings.AutoStory and not Settings.StoryDoorOpened then
             local distance = (StoryHouseCFrame.Position - hrp.Position).Magnitude
             
-            if distance > 5 then
-                -- Voa até a porra da casa
+            -- Estado 1: Voando pra porra da casa
+            if Settings.StoryState == "IDLE" and distance > 5 then
+                Settings.StoryState = "FLYING"
                 local travelTime = distance / Settings.FlightSpeed
                 if travelTime <= 0 then travelTime = 0.01 end
                 
-                local flyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = StoryHouseCFrame})
-                flyTween:Play()
-                flyTween.Completed:Wait()
-            else
-                -- Chegou na porta, aciona a porra do remote
-                enterStoryHouse()
-                Settings.StoryDoorOpened = true
-                task.wait(2) -- Espera um pouco pra garantir que o boneco entrou
-                
-                -- Desliga a flag pra não ficar em loop infinito no menu
-                Settings.AutoStory = false 
-                if Library.Toggles and Library.Toggles.AutoStoryToggle then
-                    Library.Toggles.AutoStoryToggle:SetValue(false)
-                end
+                storyFlyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = StoryHouseCFrame})
+                storyFlyTween:Play()
             end
+
+            -- Estado 2: Chegou perto, para a porra do boneco
+            if distance <= 5 and Settings.StoryState == "FLYING" then
+                Settings.StoryState = "STOPPING"
+                
+                if storyFlyTween then
+                    storyFlyTween:Cancel()
+                    storyFlyTween = nil
+                end
+                
+                -- Crava no chão e zera a velocidade
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+                hrp.CFrame = StoryHouseCFrame
+                
+                -- Estado 3: Espera o servidor registrar que ele parou e ENTRA
+                task.spawn(function()
+                    task.wait(0.5) -- Meio segundo de segurança
+                    if Settings.StoryState == "STOPPING" then
+                        Settings.StoryState = "ENTERING"
+                        enterStoryHouse()
+                        
+                        Settings.StoryDoorOpened = true
+                        Settings.AutoStory = false 
+                        if StoryToggle and StoryToggle.SetValue then
+                            StoryToggle:SetValue(false)
+                        end
+                    end
+                end)
+            end
+        elseif not Settings.AutoStory and Settings.StoryState ~= "IDLE" then
+            -- Reset de segurança se o usuário desligar no meio do caminho
+            if storyFlyTween then storyFlyTween:Cancel() end
+            Settings.StoryState = "IDLE"
         end
 
         -- ==========================================
@@ -306,4 +335,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] UI atualizada. O bagulho vai entrar na porra da casa agora.")
+print("[LARP] Máquina de estados ativada. O boneco agora para, respira e invade a porra da casa.")
