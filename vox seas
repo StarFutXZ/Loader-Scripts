@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História Completa (Coordenada Atualizada)
+-- LARP's Evenesce Auto-Farm com Quest de História Completa (Casa da Velha Incluída)
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -23,14 +23,16 @@ local Settings = {
     FlightSpeed = 250,
     BaseSpeed = 250,
     StoryDoorOpened = false,
-    StoryState = "IDLE" -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, DONE
+    StoryState = "IDLE" 
+    -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, FLY_HOUSE2, ENTER_HOUSE2, DONE
 }
 
 -- Coordenadas do Fluxo da História
 local Coords = {
     House = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125),
-    NPC = CFrame.new(-326.5045166015625, -766.5742797851562, -35.77769470214844), -- COORDENADA NOVA AQUI
-    ExitDoor = CFrame.new(-320.39434814453125, -763.6283569335938, -29.28922462463379)
+    NPC = CFrame.new(-326.5045166015625, -766.5742797851562, -35.77769470214844),
+    ExitDoor = CFrame.new(-320.39434814453125, -763.6283569335938, -29.28922462463379),
+    House2 = CFrame.new(21.806453704833984, 25.615154266357422, 538.6945190429688) -- Nova Casa
 }
 
 -- ==========================================
@@ -206,7 +208,17 @@ end
 local function leaveHouse()
     local args = { [1] = "EnterArea", [2] = "ElderHouseLeave" }
     game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
-    print("[LARP] Vazando da porra da casa...")
+    print("[LARP] Vazando da porra da casa do velho...")
+end
+
+-- NOVA AÇÃO: Entrar na casa da velha
+local function enterOldLadyHouse()
+    local args = {
+        [1] = "EnterArea",
+        [2] = "OldLadyHouseEnter"
+    }
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
+    print("[LARP] Invadindo a porra da casa da velha...")
 end
 
 -- Loop Principal
@@ -261,7 +273,7 @@ task.spawn(function()
                 task.spawn(function()
                     task.wait(0.5)
                     enterHouse()
-                    task.wait(1.5) -- Espera carregar o interior
+                    task.wait(1.5) 
                     Settings.StoryState = "FLY_NPC"
                 end)
 
@@ -280,7 +292,7 @@ task.spawn(function()
                 task.spawn(function()
                     task.wait(0.5)
                     talkToNPC()
-                    task.wait(1.5) -- Espera o diálogo
+                    task.wait(1.5) 
                     Settings.StoryState = "FLY_EXIT"
                 end)
 
@@ -299,6 +311,27 @@ task.spawn(function()
                 task.spawn(function()
                     task.wait(0.5)
                     leaveHouse()
+                    task.wait(1.5)
+                    Settings.StoryState = "FLY_HOUSE2" -- Mudou aqui, vai pra outra casa
+                end)
+
+            -- NOVO ESTADO: Voar até a casa da velha
+            elseif Settings.StoryState == "FLY_HOUSE2" then
+                local dist = (Coords.House2.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.House2.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.House2
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "ENTER_HOUSE2"
+                end
+
+            -- NOVO ESTADO: Entrar na casa da velha
+            elseif Settings.StoryState == "ENTER_HOUSE2" then
+                task.spawn(function()
+                    task.wait(0.5)
+                    enterOldLadyHouse()
                     task.wait(1.5)
                     Settings.StoryState = "DONE"
                 end)
@@ -364,4 +397,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Coordenada atualizada, porra. O monge agora vai no NPC certo.")
+print("[LARP] Fluxo atualizado. O monge agora vai invadir a casa da velha também.")
