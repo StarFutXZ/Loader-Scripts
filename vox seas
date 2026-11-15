@@ -1,536 +1,60 @@
---[[═══════════════════════════════════════════════════════════════
-      VOX SEAS | PREMIUM HUB (UI REDESIGN + NPC CLICKER FIX)
-      Made by @ronzy.exe on discord
-═══════════════════════════════════════════════════════════════]]
+-- LARP's Auto-Farm: Step 1 - Quest NPC Navigation & Accept
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
-local Players          = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser      = game:GetService("VirtualUser")
-local TweenService     = game:GetService("TweenService")
-local Workspace        = game:GetService("Workspace")
+local localPlayer = Players.LocalPlayer
 
-local LP = Players.LocalPlayer
-local PG = LP:WaitForChild("PlayerGui")
+-- Parsed exact CFrame provided
+local targetCFrame = CFrame.new(
+    -143.089233, 20.8761578, 325.018066,
+    -0.367537022, 0, -0.93001014,
+    0, 1, 0,
+    0.93001014, 0, -0.367537051
+)
 
---=============================================================
--- CONFIG
---=============================================================
-local CFG = {
-    Radius         = 400,
-    AttackDelay    = 0.20,
-    MagnetRadius   = 60,
-    AutoFarm       = false,
-    AutoQuest      = false,
-    KillAura       = false,
-    Magnet         = false,
-    AntiAFK        = true,
-    Accent         = Color3.fromRGB(90, 200, 255),
-    Bg             = Color3.fromRGB(20, 20, 25),
-    SidebarBg      = Color3.fromRGB(15, 15, 18),
-    TextColor      = Color3.fromRGB(220, 220, 220)
-}
-
-local isDoingQuest = false
-
---=============================================================
--- LÓGICA DE CLIQUE ABSOLUTO (VirtualUser)
---=============================================================
-local function mouseClickButton(btn)
-    if not btn or not btn.Visible then return false end
-    local pos, size = btn.AbsolutePosition, btn.AbsoluteSize
-    if size.X > 0 and size.Y > 0 then
-        local center = Vector2.new(pos.X + size.X/2, pos.Y + size.Y/2)
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:Button1Down(center)
-            task.wait(0.05)
-            VirtualUser:Button1Up(center)
-        end)
-        return true
-    end
-    return false
-end
-
-local function smartClick(textToFind)
-    local lowerText = textToFind:lower()
-    for _, obj in ipairs(game:GetDescendants()) do
-        if (obj:IsA("TextButton") or obj:IsA("ImageButton")) and obj.Visible then
-            local txt = ""
-            if obj:IsA("TextButton") then txt = obj.Text:lower() end
-            for _, desc in ipairs(obj:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Visible then
-                    txt = txt .. " " .. desc.Text:lower()
+local function navigateAndAccept()
+    local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    local humanoid = char:WaitForChild("Humanoid")
+    
+    -- Temporarily disable collision to prevent getting stuck on terrain during tween
+    local noclipConnection
+    noclipConnection = RunService.Stepped:Connect(function()
+        if char and hrp then
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.CanCollide then
+                    v.CanCollide = false
                 end
             end
-            
-            -- Checa se o texto bate e se o botão está na tela
-            if txt:find(lowerText) and obj.AbsoluteSize.X > 0 then
-                if mouseClickButton(obj) then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
---=============================================================
--- HELPERS DE FARM
---=============================================================
-local function getChar()
-    local c = LP.Character
-    if not c then return nil end
-    local hrp = c:FindFirstChild("HumanoidRootPart")
-    local hum = c:FindFirstChildOfClass("Humanoid")
-    if hrp and hum and hum.Health > 0 then return c, hrp, hum end
-    return nil
-end
-
-local function getTargetsForLevel()
-    local lvl = 1
-    local stats = LP:FindFirstChild("leaderstats")
-    if stats and stats:FindFirstChild("Level") then lvl = stats.Level.Value
-    elseif stats and stats:FindFirstChild("Lvl") then lvl = stats.Lvl.Value end
-
-    if lvl < 5 then
-        return {"cutlass pirate", "flint pirate", "bandit"}
-    else
-        return {"marine recruit", "marine corporal", "corrupt marine", "bandit enforcer"}
-    end
-end
-
-local function swing()
-    local c = LP.Character
-    if not c then return end
-    local tool = c:FindFirstChildOfClass("Tool")
-    if not tool then
-        local bp = LP:FindFirstChild("Backpack")
-        if bp then
-            for _, t in ipairs(bp:GetChildren()) do
-                if t:IsA("Tool") then
-                    c:FindFirstChildOfClass("Humanoid"):EquipTool(t)
-                    task.wait(0.05)
-                    tool = t
-                    break
-                end
-            end
-        end
-    end
-    if tool then
-        pcall(function()
-            tool:Activate()
-            local rem = tool:FindFirstChild("Remote") or tool:FindFirstChildWhichIsA("RemoteEvent")
-            if rem then rem:FireServer() end
-        end)
-    end
-end
-
-local function findTargets(radius)
-    local list = {}
-    local _, hrp = getChar()
-    if not hrp then return list end
-    local targets = getTargetsForLevel()
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local lowerName = obj.Name:lower()
-            for _, targetName in ipairs(targets) do
-                if lowerName:find(targetName) then
-                    local hum = obj:FindFirstChildOfClass("Humanoid")
-                    local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart
-                    if hum and hum.Health > 0 and root then
-                        local d = (root.Position - hrp.Position).Magnitude
-                        if d <= radius then
-                            table.insert(list, {model = obj, root = root, hum = hum, dist = d})
-                        end
-                        break
-                    end
-                end
-            end
-        end
-    end
-    table.sort(list, function(a, b) return a.dist < b.dist end)
-    return list
-end
-
---=============================================================
--- LÓGICA DA QUEST DEFINITIVA
---=============================================================
-local function doSolmarQuest()
-    if isDoingQuest then return end
-    isDoingQuest = true
-    
-    local _, hrp = getChar()
-    if not hrp then isDoingQuest = false return end
-
-    updateStatus("Procurando NPC...")
-    local giverModel = nil
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name:lower():find("solmar") then
-            giverModel = obj
-            break
-        end
-    end
-
-    if giverModel then
-        updateStatus("Teleportando...")
-        local pos = giverModel:FindFirstChild("HumanoidRootPart") or giverModel.PrimaryPart
-        
-        if pos then
-            -- Teleporta pra frente do NPC
-            hrp.CFrame = pos.CFrame * CFrame.new(0, 0, 4)
-            task.wait(1.5)
-            
-            -- Tenta clicar no "Conversar" flutuante primeiro
-            updateStatus("Clicando 'Conversar'...")
-            smartClick("conversar")
-            task.wait(1)
-            
-            -- Se não abriu, tenta forçar ProximityPrompt / ClickDetector
-            for _, prompt in ipairs(giverModel:GetDescendants()) do
-                if prompt:IsA("ProximityPrompt") then fireproximityprompt(prompt) end
-                if prompt:IsA("ClickDetector") then fireclickdetector(prompt) end
-            end
-            task.wait(1)
-            smartClick("conversar") -- Tenta de novo
-            
-            -- Avança no diálogo
-            task.wait(1)
-            updateStatus("Aceitando Missão...")
-            smartClick("mostre-me")
-            smartClick("mostrar")
-            task.wait(1)
-            smartClick("aceitar")
-            smartClick("accept")
-            
-            -- Fecha
-            task.wait(1)
-            smartClick("fechar")
-            smartClick("x")
-            
-            updateStatus("Missão Coletada!")
-            task.wait(2)
-        end
-    else
-        updateStatus("NPC nao encontrado!")
-        task.wait(1)
-    end
-    
-    isDoingQuest = false
-end
-
---=============================================================
--- UI PREMIUM (Estilo Lowyx)
---=============================================================
-local gui = Instance.new("ScreenGui")
-gui.Name = "VoxSeas_Premium"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.DisplayOrder = 100
-gui.Parent = PG
-
-local openBtn = Instance.new("TextButton")
-openBtn.Size = UDim2.fromOffset(120, 35)
-openBtn.Position = UDim2.new(0, 20, 0, 20)
-openBtn.BackgroundColor3 = CFG.Accent
-openBtn.TextColor3 = CFG.Bg
-openBtn.Font = Enum.Font.GothamBold
-openBtn.TextSize = 14
-openBtn.Text = "ABRIR HUB"
-openBtn.Visible = false
-openBtn.Parent = gui
-Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 6)
-
-local main = Instance.new("Frame")
-main.Size = UDim2.fromOffset(450, 280)
-main.Position = UDim2.new(0.5, -225, 0.5, -140)
-main.BackgroundColor3 = CFG.Bg
-main.BorderSizePixel = 0
-main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
-local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(50, 50, 60)
-stroke.Thickness = 1.5
-
--- SIDEBAR
-local sidebar = Instance.new("Frame")
-sidebar.Size = UDim2.new(0, 130, 1, 0)
-sidebar.BackgroundColor3 = CFG.SidebarBg
-sidebar.BorderSizePixel = 0
-sidebar.Parent = main
-Instance.new("UICorner", sidebar).CornerRadius = UDim.new(0, 8)
--- Fix borda direita
-local fix = Instance.new("Frame")
-fix.Size = UDim2.new(0, 10, 1, 0)
-fix.Position = UDim2.new(1, -10, 0, 0)
-fix.BackgroundColor3 = CFG.SidebarBg
-fix.BorderSizePixel = 0
-fix.Parent = sidebar
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.TextSize = 16
-title.TextColor3 = CFG.Accent
-title.Text = "VOX SEAS"
-title.Parent = sidebar
-
--- Botão de Fechar
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.fromOffset(30, 30)
-closeBtn.Position = UDim2.new(1, -35, 0, 5)
-closeBtn.BackgroundTransparency = 1
-closeBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 18
-closeBtn.Text = "X"
-closeBtn.Parent = main
-
--- ABAS (Sidebar)
-local tabs = {"Main", "Combat", "Quest"}
-local tabBtns = {}
-local contentFrames = {}
-
-local function createTab(name, yPos, index)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, yPos)
-    btn.BackgroundTransparency = 1
-    btn.TextColor3 = Color3.fromRGB(150, 150, 150)
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 13
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.Text = "  " .. name
-    btn.Parent = sidebar
-    
-    local ind = Instance.new("Frame")
-    ind.Size = UDim2.new(0, 3, 0.6, 0)
-    ind.Position = UDim2.new(0, 0, 0.2, 0)
-    ind.BackgroundColor3 = CFG.Accent
-    ind.Visible = (index == 1)
-    ind.Parent = btn
-    Instance.new("UICorner", ind).CornerRadius = UDim.new(1, 0)
-
-    local cFrame = Instance.new("Frame")
-    cFrame.Size = UDim2.new(1, -140, 1, -20)
-    cFrame.Position = UDim2.new(0, 140, 0, 10)
-    cFrame.BackgroundTransparency = 1
-    cFrame.Visible = (index == 1)
-    cFrame.Parent = main
-    
-    tabBtns[name] = {btn = btn, ind = ind}
-    contentFrames[name] = cFrame
-
-    btn.MouseButton1Click:Connect(function()
-        for tName, tData in pairs(tabBtns) do
-            tData.ind.Visible = (tName == name)
-            tData.btn.TextColor3 = (tName == name) and CFG.TextColor or Color3.fromRGB(150, 150, 150)
-            contentFrames[tName].Visible = (tName == name)
         end
     end)
-end
-createTab("Main", 50, 1)
-createTab("Combat", 90, 2)
-createTab("Quest", 130, 3)
 
--- Helper: Toggle Premium (Switch Animado)
-local function createSwitch(parent, text, key, order, defaultState)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 35)
-    container.BackgroundTransparency = 1
-    container.LayoutOrder = order
-    container.Parent = parent
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -60, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 13
-    lbl.TextColor3 = CFG.TextColor
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Text = text
-    lbl.Parent = container
-
-    local switchBg = Instance.new("TextButton")
-    switchBg.Size = UDim2.fromOffset(40, 20)
-    switchBg.Position = UDim2.new(1, -40, 0.5, -10)
-    switchBg.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-    switchBg.Text = ""
-    switchBg.AutoButtonColor = false
-    switchBg.Parent = container
-    Instance.new("UICorner", switchBg).CornerRadius = UDim.new(1, 0)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.fromOffset(16, 16)
-    knob.Position = UDim2.new(0, 2, 0.5, -8)
-    knob.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-    knob.Parent = switchBg
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-    local isOn = CFG[key]
+    -- Smooth precise tween to the quest NPC
+    local tweenInfo = TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
     
-    local function updateVisuals()
-        local targetPos = isOn and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
-        local targetBg = isOn and CFG.Accent or Color3.fromRGB(50, 50, 60)
-        local targetKnob = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
-        
-        TweenService:Create(knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {Position = targetPos, BackgroundColor3 = targetKnob}):Play()
-        TweenService:Create(switchBg, TweenInfo.new(0.2), {BackgroundColor3 = targetBg}):Play()
+    tween:Play()
+    tween.Completed:Wait()
+    
+    -- Cleanup noclip immediately after arriving
+    if noclipConnection then 
+        noclipConnection:Disconnect() 
+    end
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") then v.CanCollide = true end
     end
 
-    if isOn then updateVisuals() end
-
-    switchBg.MouseButton1Click:Connect(function()
-        isOn = not isOn
-        CFG[key] = isOn
-        updateVisuals()
-    end)
+    -- Fire the server remote to accept the quest
+    local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
+    local args = {
+        [1] = "AcceptGrinding",
+        [2] = "Defeat Pirates"
+    }
+    
+    questRemote:FireServer(unpack(args))
+    print("[LARP] Quest accepted. Now go kill some fucks.")
 end
 
--- Helper: Status Label
-local statusLbl = Instance.new("TextLabel")
-statusLbl.Size = UDim2.new(1, -140, 0, 20)
-statusLbl.Position = UDim2.new(0, 140, 1, -25)
-statusLbl.BackgroundTransparency = 1
-statusLbl.Font = Enum.Font.GothamMedium
-statusLbl.TextSize = 11
-statusLbl.TextColor3 = CFG.Accent
-statusLbl.TextXAlignment = Enum.TextXAlignment.Left
-statusLbl.Text = "Status: Aguardando..."
-statusLbl.Parent = main
-
-function updateStatus(txt)
-    statusLbl.Text = "Status: " .. txt
-end
-
--- POPULAR ABAS
-local function addLayout(frame)
-    local l = Instance.new("UIListLayout", frame)
-    l.Padding = UDim.new(0, 8)
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-end
-addLayout(contentFrames["Main"])
-addLayout(contentFrames["Combat"])
-addLayout(contentFrames["Quest"])
-
--- MAIN TAB
-createSwitch(contentFrames["Main"], "Auto Farm (Teleport)", "AutoFarm", 1)
-createSwitch(contentFrames["Main"], "Auto Solmar Quest", "AutoQuest", 2)
-createSwitch(contentFrames["Main"], "Anti AFK", "AntiAFK", 3)
-
--- COMBAT TAB
-createSwitch(contentFrames["Combat"], "Magnet & Kill (Gather)", "Magnet", 1)
-createSwitch(contentFrames["Combat"], "Kill Aura (AoE)", "KillAura", 2)
-
--- QUEST TAB
-local forceBtn = Instance.new("TextButton")
-forceBtn.Size = UDim2.new(1, 0, 0, 35)
-forceBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-forceBtn.Font = Enum.Font.GothamBold
-forceBtn.TextSize = 13
-forceBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-forceBtn.Text = "FORÇAR QUEST AGORA"
-forceBtn.LayoutOrder = 1
-forceBtn.Parent = contentFrames["Quest"]
-Instance.new("UICorner", forceBtn).CornerRadius = UDim.new(0, 6)
-
-forceBtn.MouseButton1Click:Connect(function()
-    if not isDoingQuest then task.spawn(doSolmarQuest) end
-end)
-
--- DRAG & CLOSE
-closeBtn.MouseButton1Click:Connect(function()
-    main.Visible = false
-    openBtn.Visible = true
-end)
-
-openBtn.MouseButton1Click:Connect(function()
-    main.Visible = true
-    openBtn.Visible = false
-end)
-
-local dragging, dragStart, startPos
-main.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        -- Se clicar no título ou na sidebar vazia
-        if i.Position.Y < main.AbsolutePosition.Y + 40 then
-            dragging, dragStart, startPos = true, i.Position, main.Position
-        end
-    end
-end)
-UserInputService.InputChanged:Connect(function(i)
-    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-        local d = i.Position - dragStart
-        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
-    end
-end)
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-        dragging = false 
-    end
-end)
-
---=============================================================
--- LOOPS DE EXECUÇÃO
---=============================================================
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if CFG.Magnet and not isDoingQuest then
-            local _, hrp = getChar()
-            if hrp then
-                local targets = findTargets(CFG.MagnetRadius)
-                for _, t in ipairs(targets) do
-                    if t.root and t.hum.Health > 0 then
-                        t.root.CFrame = hrp.CFrame + Vector3.new(math.random(-4, 4), 0, math.random(-4, 4))
-                    end
-                end
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(CFG.AttackDelay)
-        if CFG.AutoFarm and not CFG.Magnet and not isDoingQuest then
-            local c, hrp, hum = getChar()
-            if c and hum.Health > 0 then
-                local targets = findTargets(CFG.Radius)
-                if #targets > 0 then
-                    local t = targets[1]
-                    local dir = (hrp.Position - t.root.Position).Unit
-                    hrp.CFrame = t.root.CFrame + dir * 4 + Vector3.new(0, 2, 0)
-                    swing()
-                end
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(0.15)
-        if CFG.KillAura and not isDoingQuest then
-            local targets = findTargets(CFG.Radius)
-            if #targets > 0 then swing() end
-        end
-    end
-end)
-
-task.spawn(function()
-    while true do
-        task.wait(5)
-        if CFG.AutoQuest and not isDoingQuest then 
-            doSolmarQuest() 
-        end
-    end
-end)
-
-LP.Idled:Connect(function()
-    if CFG.AntiAFK then
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end
-end)
+navigateAndAccept()
