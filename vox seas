@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Voo Adaptativo
+-- LARP's Evenesce Auto-Farm com Quest de História e Invasão
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -14,13 +14,19 @@ local localPlayer = Players.LocalPlayer
 local Settings = {
     AutoFarm = false,
     AutoQuest = true,
+    AutoStory = false,
     AutoEquip = true,
     Distance = 5,
     TargetMob = "Pirate",
     SelectedQuest = "Defeat Pirates",
-    FlightSpeed = 250, -- Velocidade inicial alta pra caralho
-    BaseSpeed = 250
+    SelectedStory = "Story 1",
+    FlightSpeed = 250,
+    BaseSpeed = 250,
+    StoryDoorOpened = false -- Controle pra não spammar a porra do remote
 }
+
+-- Coordenadas da Quest de História
+local StoryHouseCFrame = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125)
 
 -- ==========================================
 -- INTERFACE EVENESCE
@@ -73,7 +79,7 @@ CombatSec:Toggle({
 -- Coluna Direita: Quests
 local QuestSec = FarmSub:Section({ Name = "Quests", Side = "Right" })
 QuestSec:Dropdown({
-    Name = "Select Quest",
+    Name = "Select Grinding Quest",
     Options = { "Defeat Pirates", "Defeat Flint Pirates", "Defeat Desert Oasis Bandits" },
     Default = "Defeat Pirates",
     Flag = "QuestSelect",
@@ -81,10 +87,20 @@ QuestSec:Dropdown({
 })
 
 QuestSec:Toggle({
-    Name = "Auto Quest",
+    Name = "Auto Grinding Quest",
     Flag = "AutoQuestToggle",
     Default = true,
     Callback = function(Value) Settings.AutoQuest = Value end
+})
+
+QuestSec:Toggle({
+    Name = "Auto Story Quest (1st Island)",
+    Flag = "AutoStoryToggle",
+    Default = false,
+    Callback = function(Value) 
+        Settings.AutoStory = Value 
+        if Value then Settings.StoryDoorOpened = false end
+    end
 })
 
 -- Coluna Esquerda: Mobs
@@ -107,7 +123,7 @@ EquipSec:Toggle({
 })
 
 -- ==========================================
--- LÓGICA DO FARM
+-- LÓGICA DO FARM E HISTÓRIA
 -- ==========================================
 local function equipWeapon()
     if not Settings.AutoEquip then return end
@@ -151,15 +167,28 @@ local function getClosestEnemy()
     return closest
 end
 
-local function acceptQuest()
-    if not Settings.AutoQuest then return end
+local function acceptQuest(isStory)
     local questRemote = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Quests")
+    
+    if isStory then
+        local args = { [1] = "AcceptStory", [2] = Settings.SelectedStory }
+        questRemote:FireServer(unpack(args))
+        print("[LARP] Story Quest puxada:", Settings.SelectedStory)
+    else
+        local args = { [1] = "AcceptGrinding", [2] = Settings.SelectedQuest }
+        questRemote:FireServer(unpack(args))
+        print("[LARP] Grinding Quest puxada:", Settings.SelectedQuest)
+    end
+end
+
+local function enterStoryHouse()
+    local privateAreas = ReplicatedStorage:WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas")
     local args = {
-        [1] = "AcceptGrinding",
-        [2] = Settings.SelectedQuest
+        [1] = "EnterArea",
+        [2] = "ElderHouseLeave"
     }
-    questRemote:FireServer(unpack(args))
-    print("[LARP] Quest accepted:", Settings.SelectedQuest)
+    privateAreas:FireServer(unpack(args))
+    print("[LARP] Invadindo a porra da casa do velho...")
 end
 
 -- Loop Principal
@@ -175,84 +204,106 @@ task.spawn(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
-        if Settings.AutoFarm then
-            -- Noclip
-            if not noclipConnection then
-                noclipConnection = RunService.Stepped:Connect(function()
-                    if char then
-                        for _, v in pairs(char:GetDescendants()) do
-                            if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
-                        end
+        -- Noclip sempre que tiver alguma ação ativa
+        if (Settings.AutoFarm or Settings.AutoStory) and not noclipConnection then
+            noclipConnection = RunService.Stepped:Connect(function()
+                if char then
+                    for _, v in pairs(char:GetDescendants()) do
+                        if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
                     end
-                end)
+                end
+            end)
+        elseif not (Settings.AutoFarm or Settings.AutoStory) and noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") then v.CanCollide = true end
             end
+        end
 
-            -- Auto Quest periódico
-            if Settings.AutoQuest and (tick() - lastQuestTime > 5) then
+        -- ==========================================
+        -- LÓGICA DA QUEST DE HISTÓRIA (PRIORIDADE)
+        -- ==========================================
+        if Settings.AutoStory and not Settings.StoryDoorOpened then
+            local distance = (StoryHouseCFrame.Position - hrp.Position).Magnitude
+            
+            if distance > 5 then
+                -- Voa até a porra da casa
+                local travelTime = distance / Settings.FlightSpeed
+                if travelTime <= 0 then travelTime = 0.01 end
+                
+                local flyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = StoryHouseCFrame})
+                flyTween:Play()
+                flyTween.Completed:Wait()
+            else
+                -- Chegou na porta, aciona a porra do remote
+                enterStoryHouse()
+                Settings.StoryDoorOpened = true
+                task.wait(2) -- Espera um pouco pra garantir que o boneco entrou
+                
+                -- Desliga a flag pra não ficar em loop infinito no menu
+                Settings.AutoStory = false 
+                if Library.Toggles and Library.Toggles.AutoStoryToggle then
+                    Library.Toggles.AutoStoryToggle:SetValue(false)
+                end
+            end
+        end
+
+        -- ==========================================
+        -- LÓGICA DE AUTO FARM (SECUNDÁRIA)
+        -- ==========================================
+        if Settings.AutoFarm and not Settings.AutoStory then
+            if (tick() - lastQuestTime > 5) then
                 lastQuestTime = tick()
-                acceptQuest()
+                if Settings.AutoQuest then acceptQuest(false) end
             end
 
             equipWeapon()
-
             local target = getClosestEnemy()
+            
             if target then
                 local tHrp = target:FindFirstChild("HumanoidRootPart")
                 if tHrp then
                     local distance = (tHrp.Position - hrp.Position).Magnitude
                     local destination = tHrp.CFrame * CFrame.new(0, 0, Settings.Distance)
                     
-                    -- Calcula o tempo do voo baseado na porra da velocidade
                     local travelTime = distance / Settings.FlightSpeed
                     if travelTime <= 0 then travelTime = 0.01 end
                     
                     local startPos = hrp.Position
-                    local tweenInfo = TweenInfo.new(travelTime, Enum.EasingStyle.Linear)
-                    local flyTween = TweenService:Create(hrp, tweenInfo, {CFrame = destination})
+                    local flyTween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = destination})
                     
                     flyTween:Play()
                     flyTween.Completed:Wait()
                     
-                    -- Sistema anti-rubberband (se o script travar e voltar)
+                    -- Sistema anti-rubberband
                     local endPos = hrp.Position
                     local expectedDist = (destination.Position - startPos).Magnitude
                     local actualDist = (endPos - startPos).Magnitude
                     
-                    -- Se moveu menos da metade do que devia, a porra do anti-cheat puxou de volta
                     if actualDist < (expectedDist * 0.5) and expectedDist > 15 then
                         stuckCounter = stuckCounter + 1
-                        Settings.FlightSpeed = math.max(50, Settings.FlightSpeed * 0.7) -- Dá uma desacelerada
+                        Settings.FlightSpeed = math.max(50, Settings.FlightSpeed * 0.7)
                         
                         if stuckCounter >= 3 then
-                            print("[LARP] Anti-cheat tá puxando. Velocidade reduzida pra:", math.floor(Settings.FlightSpeed))
+                            print("[LARP] Anti-cheat tá puxando de volta. Velocidade reduzida:", math.floor(Settings.FlightSpeed))
                             stuckCounter = 0
                         end
                     else
-                        -- Se tá voando de boa, começa a recuperar a velocidade aos poucos
                         stuckCounter = 0
                         if Settings.FlightSpeed < Settings.BaseSpeed then
                             Settings.FlightSpeed = math.min(Settings.BaseSpeed, Settings.FlightSpeed + 5)
                         end
                     end
 
-                    -- Ataca
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
                         tool:Activate()
                     end
                 end
             end
-        else
-            -- Desligar noclip
-            if noclipConnection then
-                noclipConnection:Disconnect()
-                noclipConnection = nil
-                for _, v in pairs(char:GetDescendants()) do
-                    if v:IsA("BasePart") then v.CanCollide = true end
-                end
-            end
         end
     end
 end)
 
-print("[LARP] Evenesce UI carregada. Voo suave e sem salvar porra nenhuma.")
+print("[LARP] UI atualizada. O bagulho vai entrar na porra da casa agora.")
