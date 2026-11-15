@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História Completa e Noclip Hardcore
+-- LARP's Evenesce Auto-Farm com Quest de História e Noclip Absoluto
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -42,10 +42,10 @@ local Window = Library:Window({
 })
 
 local MainTab = Window:Tab({ Name = "Main", Icon = "crosshair" })
-local PlayerTab = Window:Tab({ Name = "Player", Icon = "user" }) -- ABA DO PLAYER AQUI
+local PlayerTab = Window:Tab({ Name = "Player", Icon = "user" }) -- A PORRA DA ABA PLAYER AQUI
 
 local FarmSub = MainTab:SubSection({ Name = "Auto Farm", Default = true })
-local PlayerSub = PlayerTab:SubSection({ Name = "Local Player", Default = true }) -- SUBSEÇÃO DO PLAYER
+local PlayerSub = PlayerTab:SubSection({ Name = "Local Player", Default = true }) -- SEÇÃO DO PLAYER
 
 -- Coluna Esquerda: Combate
 local CombatSec = FarmSub:Section({ Name = "Combat" })
@@ -137,11 +137,10 @@ EquipSec:Toggle({
 -- ==========================================
 -- SEÇÃO PLAYER (NOCLIP)
 -- ==========================================
-local NoclipToggle
-NoclipToggle = PlayerSub:Toggle({
-    Name = "Noclip (Hardcore)",
+PlayerSub:Toggle({
+    Name = "Noclip (Foda-se as paredes)",
     Flag = "NoclipToggle",
-    Default = true, -- Ligado por padrão
+    Default = true, 
     Callback = function(Value) 
         Settings.Noclip = Value 
     end
@@ -223,44 +222,46 @@ local function leaveHouse()
 end
 
 -- ==========================================
--- NOCLIP HARDCORE (RODA EM SEGUNDO PLANO)
+-- NOCLIP ABSOLUTO (RODA SEPARADO E FORÇA O CARALHO)
 -- ==========================================
-task.spawn(function()
-    local noclipConnection = nil
+local noclipConnection = nil
 
-    while task.wait() do
+local function applyNoclip()
+    local char = localPlayer.Character
+    if char then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.CanCollide = false
+            end
+        end
+    end
+end
+
+-- Conecta logo de cara pra garantir que a porra tá ativa desde o início
+if Settings.Noclip then
+    noclipConnection = RunService.Stepped:Connect(function()
+        if Settings.Noclip then applyNoclip() end
+    end)
+end
+
+-- Monitora o Toggle da porra do Noclip
+task.spawn(function()
+    while task.wait(0.5) do
         if Settings.Noclip then
             if not noclipConnection then
-                -- Conecta no Heartbeat pra forçar a porra da colisão no mesmo frame que o jogo tenta setar
-                noclipConnection = RunService.Heartbeat:Connect(function()
-                    local char = localPlayer.Character
-                    if char then
-                        for _, v in pairs(char:GetDescendants()) do
-                            if v:IsA("BasePart") then
-                                if v.CanCollide then
-                                    v.CanCollide = false
-                                end
-                                -- Força a porra da colisão do HumanoidRootPart também, caso o jogo tente resetar
-                                if v.Name == "HumanoidRootPart" then
-                                    v.CanCollide = false
-                                end
-                            end
-                        end
-                    end
+                noclipConnection = RunService.Stepped:Connect(function()
+                    applyNoclip()
                 end)
             end
+            applyNoclip() -- Reforço pra caso o boneco tome respawn ou troque de parte
         else
-            -- Desliga a porra do noclip e restaura a colisão
             if noclipConnection then
                 noclipConnection:Disconnect()
                 noclipConnection = nil
-                
                 local char = localPlayer.Character
                 if char then
                     for _, v in pairs(char:GetDescendants()) do
-                        if v:IsA("BasePart") then
-                            v.CanCollide = true
-                        end
+                        if v:IsA("BasePart") then v.CanCollide = true end
                     end
                 end
             end
@@ -399,3 +400,5 @@ task.spawn(function()
         end
     end
 end)
+
+print("[LARP] Aba Player ativada. O noclip tá fodendo as paredes.")
