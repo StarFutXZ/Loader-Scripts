@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História Completa (Casa da Velha Incluída)
+-- LARP's Evenesce Auto-Farm (Fluxo da Casa da Velha - Supplies Lady)
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -24,7 +24,8 @@ local Settings = {
     BaseSpeed = 250,
     StoryDoorOpened = false,
     StoryState = "IDLE" 
-    -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, FLY_HOUSE2, ENTER_HOUSE2, DONE
+    -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, 
+    -- FLY_HOUSE2, ENTER_HOUSE2, FLY_NPC2, TALK_NPC2, FLY_EXIT2, WAIT_FOR_EXIT
 }
 
 -- Coordenadas do Fluxo da História
@@ -32,7 +33,10 @@ local Coords = {
     House = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125),
     NPC = CFrame.new(-326.5045166015625, -766.5742797851562, -35.77769470214844),
     ExitDoor = CFrame.new(-320.39434814453125, -763.6283569335938, -29.28922462463379),
-    House2 = CFrame.new(21.806453704833984, 25.615154266357422, 538.6945190429688) -- Nova Casa
+    
+    House2 = CFrame.new(21.806453704833984, 25.615154266357422, 538.6945190429688),
+    NPC2 = CFrame.new(339.68572998046875, -865.4014282226562, 12.402271270751953), -- Mulher dos suprimentos
+    ExitDoor2 = CFrame.new(353.71466064453125, -863.8352661132812, 22.83222770690918) -- Porta de saída da casa 2
 }
 
 -- ==========================================
@@ -211,7 +215,6 @@ local function leaveHouse()
     print("[LARP] Vazando da porra da casa do velho...")
 end
 
--- NOVA AÇÃO: Entrar na casa da velha
 local function enterOldLadyHouse()
     local args = {
         [1] = "EnterArea",
@@ -219,6 +222,12 @@ local function enterOldLadyHouse()
     }
     game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
     print("[LARP] Invadindo a porra da casa da velha...")
+end
+
+local function talkToSuppliesLady()
+    local args = { [1] = "Talk_SuppliesLady" }
+    game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("Elysium_Converse"):FireServer(unpack(args))
+    print("[LARP] Falando com a porra da mulher dos suprimentos...")
 end
 
 -- Loop Principal
@@ -312,10 +321,10 @@ task.spawn(function()
                     task.wait(0.5)
                     leaveHouse()
                     task.wait(1.5)
-                    Settings.StoryState = "FLY_HOUSE2" -- Mudou aqui, vai pra outra casa
+                    Settings.StoryState = "FLY_HOUSE2"
                 end)
 
-            -- NOVO ESTADO: Voar até a casa da velha
+            -- CASA DA VELHA (HOUSE 2)
             elseif Settings.StoryState == "FLY_HOUSE2" then
                 local dist = (Coords.House2.Position - hrp.Position).Magnitude
                 if dist > 5 then
@@ -327,22 +336,48 @@ task.spawn(function()
                     Settings.StoryState = "ENTER_HOUSE2"
                 end
 
-            -- NOVO ESTADO: Entrar na casa da velha
             elseif Settings.StoryState == "ENTER_HOUSE2" then
                 task.spawn(function()
                     task.wait(0.5)
                     enterOldLadyHouse()
                     task.wait(1.5)
-                    Settings.StoryState = "DONE"
+                    Settings.StoryState = "FLY_NPC2"
                 end)
 
-            elseif Settings.StoryState == "DONE" then
-                Settings.StoryState = "IDLE"
-                Settings.AutoStory = false
-                Settings.StoryDoorOpened = true
-                if StoryToggle and StoryToggle.SetValue then
-                    StoryToggle:SetValue(false)
+            -- NOVOS ESTADOS: IR PRO NPC DA MULHER, FALAR E VOLTAR PRA PORTA
+            elseif Settings.StoryState == "FLY_NPC2" then
+                local dist = (Coords.NPC2.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.NPC2.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.NPC2
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "TALK_NPC2"
                 end
+
+            elseif Settings.StoryState == "TALK_NPC2" then
+                task.spawn(function()
+                    task.wait(0.5)
+                    talkToSuppliesLady()
+                    task.wait(1.5)
+                    Settings.StoryState = "FLY_EXIT2"
+                end)
+
+            elseif Settings.StoryState == "FLY_EXIT2" then
+                local dist = (Coords.ExitDoor2.Position - hrp.Position).Magnitude
+                if dist > 5 then
+                    local dir = (Coords.ExitDoor2.Position - hrp.Position).Unit
+                    hrp.CFrame = CFrame.new(hrp.Position + dir * (Settings.FlightSpeed * 0.05), hrp.Position + dir)
+                else
+                    hrp.CFrame = Coords.ExitDoor2
+                    hrp.AssemblyLinearVelocity = Vector3.zero
+                    Settings.StoryState = "WAIT_FOR_EXIT" -- Espera o teu código pra sair
+                end
+
+            elseif Settings.StoryState == "WAIT_FOR_EXIT" then
+                -- O bot vai ficar parado nessa porra de estado até tu mandar o código de sair da casa
+                task.wait(1)
             end
         end
 
@@ -397,4 +432,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Fluxo atualizado. O monge agora vai invadir a casa da velha também.")
+print("[LARP] O monge tá na porta da casa da velha esperando a porra do teu código de saída.")
