@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm com Quest de História Completa
+-- LARP's Evenesce Auto-Farm com Quest de História Completa e Noclip Hardcore
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -23,10 +23,10 @@ local Settings = {
     FlightSpeed = 250,
     BaseSpeed = 250,
     StoryDoorOpened = false,
-    StoryState = "IDLE" -- IDLE, FLY_HOUSE, ENTER_HOUSE, FLY_NPC, TALK_NPC, FLY_EXIT, LEAVE_HOUSE, DONE
+    StoryState = "IDLE",
+    Noclip = true -- LIGADO POR PADRÃO
 }
 
--- Coordenadas do Fluxo da História
 local Coords = {
     House = CFrame.new(-322.98748779296875, 16.722469329833984, 320.0177001953125),
     NPC = CFrame.new(-323.0217590332031, -759.1370849609375, -45.231422424316406),
@@ -42,7 +42,10 @@ local Window = Library:Window({
 })
 
 local MainTab = Window:Tab({ Name = "Main", Icon = "crosshair" })
+local PlayerTab = Window:Tab({ Name = "Player", Icon = "user" }) -- ABA DO PLAYER AQUI
+
 local FarmSub = MainTab:SubSection({ Name = "Auto Farm", Default = true })
+local PlayerSub = PlayerTab:SubSection({ Name = "Local Player", Default = true }) -- SUBSEÇÃO DO PLAYER
 
 -- Coluna Esquerda: Combate
 local CombatSec = FarmSub:Section({ Name = "Combat" })
@@ -132,6 +135,19 @@ EquipSec:Toggle({
 })
 
 -- ==========================================
+-- SEÇÃO PLAYER (NOCLIP)
+-- ==========================================
+local NoclipToggle
+NoclipToggle = PlayerSub:Toggle({
+    Name = "Noclip (Hardcore)",
+    Flag = "NoclipToggle",
+    Default = true, -- Ligado por padrão
+    Callback = function(Value) 
+        Settings.Noclip = Value 
+    end
+})
+
+-- ==========================================
 -- LÓGICA DO FARM E HISTÓRIA
 -- ==========================================
 local function equipWeapon()
@@ -182,15 +198,12 @@ local function acceptQuest(isStory)
     if isStory then
         local args = { [1] = "AcceptStory", [2] = Settings.SelectedStory }
         questRemote:FireServer(unpack(args))
-        print("[LARP] Story Quest puxada:", Settings.SelectedStory)
     else
         local args = { [1] = "AcceptGrinding", [2] = Settings.SelectedQuest }
         questRemote:FireServer(unpack(args))
-        print("[LARP] Grinding Quest puxada:", Settings.SelectedQuest)
     end
 end
 
--- Ações da História
 local function enterHouse()
     local args = { [1] = "EnterArea", [2] = "ElderHouseEnter" }
     game:GetService("ReplicatedStorage"):WaitForChild("NetworkInstances"):WaitForChild("RemoteEvents"):WaitForChild("PrivateAreas"):FireServer(unpack(args))
@@ -209,9 +222,54 @@ local function leaveHouse()
     print("[LARP] Vazando da porra da casa...")
 end
 
--- Loop Principal
+-- ==========================================
+-- NOCLIP HARDCORE (RODA EM SEGUNDO PLANO)
+-- ==========================================
 task.spawn(function()
-    local noclipConnection
+    local noclipConnection = nil
+
+    while task.wait() do
+        if Settings.Noclip then
+            if not noclipConnection then
+                -- Conecta no Heartbeat pra forçar a porra da colisão no mesmo frame que o jogo tenta setar
+                noclipConnection = RunService.Heartbeat:Connect(function()
+                    local char = localPlayer.Character
+                    if char then
+                        for _, v in pairs(char:GetDescendants()) do
+                            if v:IsA("BasePart") then
+                                if v.CanCollide then
+                                    v.CanCollide = false
+                                end
+                                -- Força a porra da colisão do HumanoidRootPart também, caso o jogo tente resetar
+                                if v.Name == "HumanoidRootPart" then
+                                    v.CanCollide = false
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+        else
+            -- Desliga a porra do noclip e restaura a colisão
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+                
+                local char = localPlayer.Character
+                if char then
+                    for _, v in pairs(char:GetDescendants()) do
+                        if v:IsA("BasePart") then
+                            v.CanCollide = true
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- Loop Principal (Farm e História)
+task.spawn(function()
     local lastQuestTime = 0
     local stuckCounter = 0
 
@@ -222,26 +280,7 @@ task.spawn(function()
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
-        -- Noclip
-        if (Settings.AutoFarm or Settings.AutoStory) and not noclipConnection then
-            noclipConnection = RunService.Stepped:Connect(function()
-                if char then
-                    for _, v in pairs(char:GetDescendants()) do
-                        if v:IsA("BasePart") and v.CanCollide then v.CanCollide = false end
-                    end
-                end
-            end)
-        elseif not (Settings.AutoFarm or Settings.AutoStory) and noclipConnection then
-            noclipConnection:Disconnect()
-            noclipConnection = nil
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") then v.CanCollide = true end
-            end
-        end
-
-        -- ==========================================
-        -- LÓGICA DA QUEST DE HISTÓRIA (MÁQUINA DE ESTADOS COMPLETA)
-        -- ==========================================
+        -- Lógica da História
         if Settings.AutoStory then
             if Settings.StoryState == "IDLE" then
                 Settings.StoryState = "FLY_HOUSE"
@@ -261,7 +300,7 @@ task.spawn(function()
                 task.spawn(function()
                     task.wait(0.5)
                     enterHouse()
-                    task.wait(1.5) -- Espera carregar o interior
+                    task.wait(1.5) 
                     Settings.StoryState = "FLY_NPC"
                 end)
 
@@ -280,7 +319,7 @@ task.spawn(function()
                 task.spawn(function()
                     task.wait(0.5)
                     talkToNPC()
-                    task.wait(1.5) -- Espera o diálogo
+                    task.wait(1.5)
                     Settings.StoryState = "FLY_EXIT"
                 end)
 
@@ -313,9 +352,7 @@ task.spawn(function()
             end
         end
 
-        -- ==========================================
-        -- LÓGICA DE AUTO FARM (SECUNDÁRIA)
-        -- ==========================================
+        -- Lógica de Auto Farm
         if Settings.AutoFarm and not Settings.AutoStory then
             if (tick() - lastQuestTime > 5) then
                 lastQuestTime = tick()
@@ -340,7 +377,6 @@ task.spawn(function()
                     flyTween:Play()
                     flyTween.Completed:Wait()
                     
-                    -- Sistema anti-rubberband
                     local endPos = hrp.Position
                     local expectedDist = (destination.Position - startPos).Magnitude
                     local actualDist = (endPos - startPos).Magnitude
@@ -363,5 +399,3 @@ task.spawn(function()
         end
     end
 end)
-
-print("[LARP] Fluxo completo carregado. O monge agora resolve a porra da história inteira.")
