@@ -1,4 +1,4 @@
--- LARP's Evenesce Auto-Farm Integration
+-- LARP's Evenesce Auto-Farm com Voo Adaptativo
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/whosnetworph/evenesce/main/library.lua"))()
 
 local Players = game:GetService("Players")
@@ -17,7 +17,9 @@ local Settings = {
     AutoEquip = true,
     Distance = 5,
     TargetMob = "Pirate",
-    SelectedQuest = "Defeat Pirates"
+    SelectedQuest = "Defeat Pirates",
+    FlightSpeed = 250, -- Velocidade inicial alta pra caralho
+    BaseSpeed = 250
 }
 
 -- ==========================================
@@ -28,8 +30,6 @@ local Window = Library:Window({
     Icon = "74643671263769"
 })
 
-Window:Watermark()
-
 local MainTab = Window:Tab({ Name = "Main", Icon = "crosshair" })
 local FarmSub = MainTab:SubSection({ Name = "Auto Farm", Default = true })
 
@@ -39,8 +39,7 @@ CombatSec:Dropdown({
     Name = "Select Weapon",
     Options = { "Combat", "Sword", "Gun" },
     Default = "Combat",
-    Flag = "WeaponType",
-    Callback = function(Value) print("[LARP] Weapon:", Value) end
+    Flag = "WeaponType"
 })
 
 CombatSec:Slider({
@@ -50,6 +49,18 @@ CombatSec:Slider({
     Suffix = " studs",
     Flag = "CombatDistance",
     Callback = function(Value) Settings.Distance = Value end
+})
+
+CombatSec:Slider({
+    Name = "Flight Speed",
+    Min = 50, Max = 1000,
+    Default = 250,
+    Suffix = " spd",
+    Flag = "FlightSpeed",
+    Callback = function(Value) 
+        Settings.FlightSpeed = Value 
+        Settings.BaseSpeed = Value
+    end
 })
 
 CombatSec:Toggle({
@@ -155,6 +166,7 @@ end
 task.spawn(function()
     local noclipConnection
     local lastQuestTime = 0
+    local stuckCounter = 0
 
     while task.wait(0.1) do
         local char = localPlayer.Character
@@ -187,7 +199,43 @@ task.spawn(function()
             if target then
                 local tHrp = target:FindFirstChild("HumanoidRootPart")
                 if tHrp then
-                    hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, Settings.Distance)
+                    local distance = (tHrp.Position - hrp.Position).Magnitude
+                    local destination = tHrp.CFrame * CFrame.new(0, 0, Settings.Distance)
+                    
+                    -- Calcula o tempo do voo baseado na porra da velocidade
+                    local travelTime = distance / Settings.FlightSpeed
+                    if travelTime <= 0 then travelTime = 0.01 end
+                    
+                    local startPos = hrp.Position
+                    local tweenInfo = TweenInfo.new(travelTime, Enum.EasingStyle.Linear)
+                    local flyTween = TweenService:Create(hrp, tweenInfo, {CFrame = destination})
+                    
+                    flyTween:Play()
+                    flyTween.Completed:Wait()
+                    
+                    -- Sistema anti-rubberband (se o script travar e voltar)
+                    local endPos = hrp.Position
+                    local expectedDist = (destination.Position - startPos).Magnitude
+                    local actualDist = (endPos - startPos).Magnitude
+                    
+                    -- Se moveu menos da metade do que devia, a porra do anti-cheat puxou de volta
+                    if actualDist < (expectedDist * 0.5) and expectedDist > 15 then
+                        stuckCounter = stuckCounter + 1
+                        Settings.FlightSpeed = math.max(50, Settings.FlightSpeed * 0.7) -- Dá uma desacelerada
+                        
+                        if stuckCounter >= 3 then
+                            print("[LARP] Anti-cheat tá puxando. Velocidade reduzida pra:", math.floor(Settings.FlightSpeed))
+                            stuckCounter = 0
+                        end
+                    else
+                        -- Se tá voando de boa, começa a recuperar a velocidade aos poucos
+                        stuckCounter = 0
+                        if Settings.FlightSpeed < Settings.BaseSpeed then
+                            Settings.FlightSpeed = math.min(Settings.BaseSpeed, Settings.FlightSpeed + 5)
+                        end
+                    end
+
+                    -- Ataca
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then
                         tool:Activate()
@@ -207,4 +255,4 @@ task.spawn(function()
     end
 end)
 
-print("[LARP] Evenesce UI carregada. O farm tá na tua mão.")
+print("[LARP] Evenesce UI carregada. Voo suave e sem salvar porra nenhuma.")
